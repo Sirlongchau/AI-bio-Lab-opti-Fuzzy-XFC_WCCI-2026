@@ -1,0 +1,4 @@
+kessler-game
+numpy
+casadi
+matplotlib
