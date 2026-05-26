@@ -161,6 +161,7 @@ class ModalSupervisor:
         self._respawn_timer_prev:    float = 0.0
         self._post_respawn_frames:   int = 0
         self._sacrifice_armed:       bool = False
+        self._in_respawn_prev:       bool = False   # edge detection for respawn
 
     # ------------------------------------------------------------------
     # Frame API
@@ -209,9 +210,21 @@ class ModalSupervisor:
         self._frames_in_mode += 1
 
         # ----------------------------------------------------------------
-        # 0. Detect respawn event (lives_remaining decreased)
+        # 0. Respawn handling
         # ----------------------------------------------------------------
         in_respawn = respawn_timer > 0.0
+
+        # Detect the rising edge: respawn just started this frame
+        if in_respawn and not self._in_respawn_prev:
+            self._set_mode(MODE_RESPAWN)
+            self._post_respawn_frames = RESPAWN_WARMUP_FRAMES
+            self._mpc_infeasible_streak = 0
+            self._sacrifice_armed = False
+
+        # Detect the falling edge: respawn just ended this frame
+        # _post_respawn_frames was already set on the rising edge,
+        # so it will naturally count down in the warmup block below.
+        self._in_respawn_prev = in_respawn
 
         if in_respawn:
             return self._respawn_control(
@@ -225,7 +238,7 @@ class ModalSupervisor:
                 MODE_FUZZY, fuzzy_thrust, fuzzy_turn_rate,
                 fire=False, drop_mine=False,
                 r_global=r_global, tau_min=tau_min,
-                note='post-respawn warmup',
+                note=f'post-respawn warmup ({self._post_respawn_frames} frames left)',
             )
 
         # ----------------------------------------------------------------
@@ -257,8 +270,6 @@ class ModalSupervisor:
         # ----------------------------------------------------------------
         # 3. Emit controls based on active mode
         # ----------------------------------------------------------------
-        print("mode",self._mode)
-        print("update function mpc_thrust", mpc_thrust)
         if self._mode == MODE_FUZZY:
             return self._emit(
                 MODE_FUZZY,
@@ -277,8 +288,6 @@ class ModalSupervisor:
             opp_fire = self._opportunistic_fire(
                 asteroid_risks_ref, current_heading, can_fire
             )
-            
-            
             return self._emit(
                 MODE_MPC,
                 thrust    = mpc_thrust,
@@ -350,7 +359,7 @@ class ModalSupervisor:
 
         return self._emit(
             MODE_SACRIFICE,
-            thrust    = 480.0,          # full thrust toward cluster
+            thrust    = 0,          # full thrust toward cluster
             turn_rate = turn_rate,
             fire      = True,           # concentrate fire during invulnerability
             drop_mine = True,           # trigger mine
