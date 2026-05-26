@@ -57,6 +57,7 @@ from __future__ import annotations
 import math
 import time
 from typing import Tuple
+import numpy as np
 
 # Kessler API (imported only here)
 try:
@@ -75,7 +76,7 @@ from toric_utils       import math_angle_to_turn_rate, angular_diff
 from risk_field        import RiskField
 from angular_profile   import AngularProfile
 from target_selector   import TargetSelector
-from mpc_director      import MPCDirector, _speed_target, _fuzzy_thrust
+from Casadi_mpc      import MPCDirector
 from modal_supervisor  import ModalSupervisor, ControlOutput
 from debug_tools       import FrameDebugger, RiskHeatmap
 
@@ -289,6 +290,54 @@ class FuzzyHybridController(KesslerController):
         # ----------------------------------------------------------------
         # 7. Fuzzy thrust (speed policy + FIS)
         # ----------------------------------------------------------------
+        from typing import List, Optional, Tuple
+        THRUST_MAX      =  480.0       # px/s²
+        THRUST_MIN      = -480.0
+        OMEGA_MAX       =  180.0       # deg/s
+        DRAG            =   80.0       # px/s²
+
+        SPEED_MAX       = 200.0
+        SPEED_MIN       =  20.0
+        def _speed_target(r_global: float) -> float:
+            return SPEED_MAX * (1.0 - r_global) + SPEED_MIN * r_global
+
+
+        def _fuzzy_thrust(speed_error: float, r_global: float, tau_min: float) -> float:
+            """
+            Sugeno FIS for thrust control.
+
+            Four rules — weighted average defuzzification.
+
+            Fixes vs original:
+            - Emergency brake activates smoothly from tau=1s (not 1.5s)
+            - Asymmetric speed tracking: faster to accelerate than brake
+            - Risk deceleration only kicks in above R=0.5
+            - All rule weights balanced so ship can actually reverse when needed
+            """
+            rules: List[Tuple[float, float]] = []
+
+            # R1 Emergency brake (tau < 1s → full weight)
+            w_emg = float(np.clip((1.0 - tau_min) / 1.0, 0.0, 1.0))
+            rules.append((w_emg * 1.5, THRUST_MIN * 0.9))
+
+            # R2 Accelerate to reach s*
+            w_acc = float(np.clip( speed_error / 100.0, 0.0, 1.0))
+            rules.append((w_acc, THRUST_MAX * 0.7))
+
+            # R3 Decelerate (gentler — avoids over-braking near zero)
+            w_dec = float(np.clip(-speed_error / 150.0, 0.0, 1.0))
+            rules.append((w_dec, THRUST_MIN * 0.5))
+
+            # R4 Risk-modulated deceleration (above R=0.5)
+            w_rsk = float(np.clip((r_global - 0.5) * 2.0, 0.0, 1.0)) * 0.6
+            rules.append((w_rsk, THRUST_MIN * 0.3))
+
+            total_w = sum(w for w, _ in rules)
+            if total_w < 1e-9:
+                return 0.0
+            thrust = sum(w * o for w, o in rules) / total_w
+            return float(np.clip(thrust, THRUST_MIN, THRUST_MAX))
+        
         s_star = _speed_target(r_global)
 
         # When no asteroids are present tau_min=inf and r_global≈0,
@@ -296,7 +345,7 @@ class FuzzyHybridController(KesslerController):
         # is ~0 and all FIS rules produce ≈0 thrust — ship drifts to a
         # stop due to drag.  We add a drag-compensation floor so the ship
         # actively maintains its target speed even in a clear field.
-        from mpc_director import DRAG as _DRAG
+        from Casadi_mpc import DRAG as _DRAG
         speed_error  = s_star - ship_speed
         fuzzy_thrust = _fuzzy_thrust(speed_error, r_global, tau_min)
 
