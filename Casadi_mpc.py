@@ -74,7 +74,7 @@ except ImportError:
 # Configuration
 # ---------------------------------------------------------------------------
 
-HORIZON_STEPS   = 15
+HORIZON_STEPS   = 10
 DT              = 0.10         # s/step → 1.5 s horizon
 
 THRUST_MAX      =  480.0       # px/s²
@@ -88,16 +88,20 @@ SPEED_MIN       =  20.0
 LAMBDA_D        = 0.25         # destruction weight (active mode)
 LAMBDA_D_RESPAWN = 0.0
 
+W_THRUST = 1e-4      # thrust effort penalty
+W_OMEGA  = 5e-3      # turn-rate penalty
+W_SPEED  = 2e-3      # speed magnitude penalty
+
 DANGER_SCALE    = 120.0        # px — exponential falloff characteristic length
 COLLISION_SOFT  =  25.0        # px — soft collision ramp radius
 COLLISION_W     =   8.0        # collision ramp weight
 
 K_OMEGA         = 2.0          # proportional heading gain
-MAX_SOLVER_MS   = 8.0          # ms — CasADi budget before fallback
+MAX_SOLVER_MS   = 20.0          # ms — CasADi budget before fallback
 IPOPT_MAX_ITER  = 30
 
 N_THETA_GRID    = 36           # fallback grid resolution
-INFEASIBILITY_COST_CEILING = 50.0
+INFEASIBILITY_COST_CEILING = 2000.0
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +112,7 @@ INFEASIBILITY_COST_CEILING = 50.0
 class MPCResult:
     feasible:         bool
     theta_star:       float
-    s_star:           float
+    
     thrust:           float
     turn_rate:        float
     best_cost:        float
@@ -117,49 +121,7 @@ class MPCResult:
     solve_time_ms:    float
 
 
-# ---------------------------------------------------------------------------
-# Speed policy and thrust FIS
-# ---------------------------------------------------------------------------
 
-def _speed_target(r_global: float) -> float:
-    return SPEED_MAX * (1.0 - r_global) + SPEED_MIN * r_global
-
-
-def _fuzzy_thrust(speed_error: float, r_global: float, tau_min: float) -> float:
-    """
-    Sugeno FIS for thrust control.
-
-    Four rules — weighted average defuzzification.
-
-    Fixes vs original:
-    - Emergency brake activates smoothly from tau=1s (not 1.5s)
-    - Asymmetric speed tracking: faster to accelerate than brake
-    - Risk deceleration only kicks in above R=0.5
-    - All rule weights balanced so ship can actually reverse when needed
-    """
-    rules: List[Tuple[float, float]] = []
-
-    # R1 Emergency brake (tau < 1s → full weight)
-    w_emg = float(np.clip((1.0 - tau_min) / 1.0, 0.0, 1.0))
-    rules.append((w_emg * 1.5, THRUST_MIN * 0.9))
-
-    # R2 Accelerate to reach s*
-    w_acc = float(np.clip( speed_error / 100.0, 0.0, 1.0))
-    rules.append((w_acc, THRUST_MAX * 0.7))
-
-    # R3 Decelerate (gentler — avoids over-braking near zero)
-    w_dec = float(np.clip(-speed_error / 150.0, 0.0, 1.0))
-    rules.append((w_dec, THRUST_MIN * 0.5))
-
-    # R4 Risk-modulated deceleration (above R=0.5)
-    w_rsk = float(np.clip((r_global - 0.5) * 2.0, 0.0, 1.0)) * 0.6
-    rules.append((w_rsk, THRUST_MIN * 0.3))
-
-    total_w = sum(w for w, _ in rules)
-    if total_w < 1e-9:
-        return 0.0
-    thrust = sum(w * o for w, o in rules) / total_w
-    return float(np.clip(thrust, THRUST_MIN, THRUST_MAX))
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +235,7 @@ class _CasADiSolver:
 
         for k in range(N):
             px_k, py_k, s_k, th_k = X[0,k], X[1,k], X[2,k], X[3,k]
+            
             uT_k, om_k             = U[0,k], U[1,k]
             drag_k = DRAG * ca.tanh(s_k / 1.0)   # smooth sign approximation
 
@@ -305,6 +268,9 @@ class _CasADiSolver:
                 danger  = ast_rsk_p[i] * ca.exp(-d_sur / DANGER_SCALE)
                 coll_mu = ca.fmax(0.0, 1.0 - d_sur / COLLISION_SOFT)
                 J       = J + danger + COLLISION_W * coll_mu**2
+                J += W_THRUST * uT_k**2
+                J += W_OMEGA  * om_k**2
+                J += W_SPEED  * s_k**2
 
                 if lambda_d > 0:
                     # Kessler heading: x component = cos θ, y component = -sin θ
@@ -427,42 +393,42 @@ class _CasADiSolver:
 # Grid search fallback
 # ---------------------------------------------------------------------------
 
-def _grid_search(
-    ship_pos:       Tuple[float, float],
-    ship_speed:     float,
-    ship_heading:   float,
-    asteroid_risks: list,
-    r_global:       float,
-    lambda_d:       float,
-    map_size:       Tuple[float, float],
-    repulse_dir:    float,
-) -> Tuple[float, float]:
-    W, H   = map_size
-    s_star = _speed_target(r_global)
-    cands  = [360.0 * j / N_THETA_GRID for j in range(N_THETA_GRID)]
-    if repulse_dir not in cands:
-        cands.append(repulse_dir)
+# def _grid_search(
+#     ship_pos:       Tuple[float, float],
+#     ship_speed:     float,
+#     ship_heading:   float,
+#     asteroid_risks: list,
+#     r_global:       float,
+#     lambda_d:       float,
+#     map_size:       Tuple[float, float],
+#     repulse_dir:    float,
+# ) -> Tuple[float, float]:
+#     W, H   = map_size
+#     s_star = _speed_target(r_global)
+#     cands  = [360.0 * j / N_THETA_GRID for j in range(N_THETA_GRID)]
+#     if repulse_dir not in cands:
+#         cands.append(repulse_dir)
 
-    best_cost    = math.inf
-    best_heading = ship_heading
+#     best_cost    = math.inf
+#     best_heading = ship_heading
 
-    for theta_j in cands:
-        px, py, s, th = ship_pos[0], ship_pos[1], ship_speed, theta_j
-        tau_loc = min((ar.tau for ar in asteroid_risks), default=math.inf)
-        total   = 0.0
+#     for theta_j in cands:
+#         px, py, s, th = ship_pos[0], ship_pos[1], ship_speed, theta_j
+#         tau_loc = min((ar.tau for ar in asteroid_risks), default=math.inf)
+#         total   = 0.0
 
-        for k in range(HORIZON_STEPS):
-            t_el = k * DT
-            u_T  = _fuzzy_thrust(s_star - s, r_global, tau_loc)
-            px, py, s, th = _step_np(px, py, s, th, u_T, 0.0, W, H)
-            total += _step_cost_np(px, py, th, asteroid_risks, t_el,
-                                   lambda_d, W, H)
+#         for k in range(HORIZON_STEPS):
+#             t_el = k * DT
+#             u_T  = _fuzzy_thrust(s_star - s, r_global, tau_loc)
+#             px, py, s, th = _step_np(px, py, s, th, u_T, 0.0, W, H)
+#             total += _step_cost_np(px, py, th, asteroid_risks, t_el,
+#                                    lambda_d, W, H)
 
-        if total < best_cost:
-            best_cost    = total
-            best_heading = theta_j
+#         if total < best_cost:
+#             best_cost    = total
+#             best_heading = theta_j
 
-    return best_heading, best_cost
+#     return best_heading, best_cost
 
 
 # ---------------------------------------------------------------------------
@@ -503,7 +469,7 @@ class MPCDirector:
     ) -> MPCResult:
 
         lambda_d = LAMBDA_D if mode == 'active' else LAMBDA_D_RESPAWN
-        s_star   = _speed_target(r_global)
+        # s_star   = _speed_target(r_global)
         t0       = time.perf_counter()
 
         # ---- CasADi path ----
@@ -526,7 +492,7 @@ class MPCDirector:
                 return MPCResult(
                     feasible         = feasible,
                     theta_star       = theta_star,
-                    s_star           = s_star,
+                    
                     thrust           = uT_0,
                     turn_rate        = om_deg,
                     best_cost        = cost_cas,
@@ -534,33 +500,45 @@ class MPCDirector:
                     solver_used      = 'casadi',
                     solve_time_ms    = elapsed,
                 )
+            else:
+                return MPCResult(
+                    feasible         = False,
+                    theta_star       = 0,
+                    
+                    thrust           = 0,
+                    turn_rate        = 0,
+                    best_cost        = cost_cas,
+                    fallback_heading = repulse_dir,
+                    solver_used      = 'casadi',
+                    solve_time_ms    = elapsed,
+                )
 
-        # ---- Grid search fallback ----
-        t1 = time.perf_counter()
-        theta_star, best_cost = _grid_search(
-            ship_pos, ship_speed, ship_heading,
-            asteroid_risks, r_global, lambda_d,
-            self.map_size, repulse_dir,
-        )
-        elapsed = (time.perf_counter() - t1) * 1000
+        # # ---- Grid search fallback ----
+        # t1 = time.perf_counter()
+        # theta_star, best_cost = _grid_search(
+        #     ship_pos, ship_speed, ship_heading,
+        #     asteroid_risks, r_global, lambda_d,
+        #     self.map_size, repulse_dir,
+        # )
+        # elapsed = (time.perf_counter() - t1) * 1000
 
-        u_T       = _fuzzy_thrust(s_star - ship_speed, r_global, tau_min)
-        turn_rate = math_angle_to_turn_rate(
-            ship_heading, theta_star, k_omega=K_OMEGA, omega_max=OMEGA_MAX
-        )
-        feasible  = best_cost < INFEASIBILITY_COST_CEILING
+        # u_T       = _fuzzy_thrust(s_star - ship_speed, r_global, tau_min)
+        # turn_rate = math_angle_to_turn_rate(
+        #     ship_heading, theta_star, k_omega=K_OMEGA, omega_max=OMEGA_MAX
+        # )
+        # feasible  = best_cost < INFEASIBILITY_COST_CEILING
 
-        return MPCResult(
-            feasible         = feasible,
-            theta_star       = theta_star,
-            s_star           = s_star,
-            thrust           = u_T,
-            turn_rate        = turn_rate,
-            best_cost        = best_cost,
-            fallback_heading = repulse_dir,
-            solver_used      = 'grid',
-            solve_time_ms    = elapsed,
-        )
+        # return MPCResult(
+        #     feasible         = feasible,
+        #     theta_star       = theta_star,
+        #     s_star           = s_star,
+        #     thrust           = u_T,
+        #     turn_rate        = turn_rate,
+        #     best_cost        = best_cost,
+        #     fallback_heading = repulse_dir,
+        #     solver_used      = 'grid',
+        #     solve_time_ms    = elapsed,
+        # )
 
     # ------------------------------------------------------------------
     def plan_respawn(
