@@ -6,8 +6,8 @@
 import time
 
 from kesslergame import Scenario, KesslerGame, GraphicsType
-from test_controller import TestController
-from fuzzy_hybrid_controller import FuzzyHybridController
+#from test_controller import TestController
+from Fuzzy_MPC_Controller import Controller
 from graphics_both import GraphicsBoth
 
 # Define game scenario
@@ -34,7 +34,7 @@ game = KesslerGame(settings=game_settings)  # Use this to visualize the game sce
 
 # Evaluate the game
 pre = time.perf_counter()
-score, perf_data = game.run(scenario=my_test_scenario, controllers=[FuzzyHybridController(), TestController()])
+score, perf_data = game.run(scenario=my_test_scenario, controllers=[Controller(), Controller()])
 
 # Print out some general info about the result
 print('Scenario eval time: '+str(time.perf_counter()-pre))

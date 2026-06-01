@@ -435,7 +435,7 @@ class _CasADiSolver:
 # Public class
 # ---------------------------------------------------------------------------
 
-class MPCDirector:
+class MPCController:
     """
     MPC planner.  Uses CasADi/IPOPT when available, grid search otherwise.
 
@@ -447,26 +447,34 @@ class MPCDirector:
 
     def __init__(
         self,
-        map_size:      Tuple[float, float],
         prefer_casadi: bool = True,
     ) -> None:
-        self.map_size    = map_size
+        
         self._use_casadi = CASADI_AVAILABLE and prefer_casadi
-        self._casadi_slv = _CasADiSolver(map_size) if self._use_casadi else None
+        
 
     # ------------------------------------------------------------------
-    def plan(
+    def compute(
         self,
-        ship_pos:       Tuple[float, float],
-        ship_vel:       Tuple[float, float],
-        ship_speed:     float,
-        ship_heading:   float,
-        asteroid_risks: list,
-        r_global:       float,
-        tau_min:        float,
+        ship_state,
+        game_state,
+        asteroid_risks: list=[],
+        r_global:       float = 0.0,
+        tau_min:        float = 0.0,
         mode:           str   = 'active',
         repulse_dir:    float = 0.0,
     ) -> MPCResult:
+
+#game data
+        self.map_size    = game_state.map_size
+        self._casadi_slv = _CasADiSolver(self.map_size) if self._use_casadi else None
+        map_size=self.map_size
+# ship states
+        ship_pos=ship_state.position,
+        ship_vel=ship_state.velocity,
+        ship_speed=ship_state.speed,
+        ship_heading=ship_state.heading,
+        
 
         lambda_d = LAMBDA_D if mode == 'active' else LAMBDA_D_RESPAWN
         # s_star   = _speed_target(r_global)
@@ -588,3 +596,25 @@ class MPCDirector:
     @property
     def solver_backend(self) -> str:
         return 'casadi+ipopt' if self._use_casadi else 'grid_search'
+    
+    
+    
+# @dataclass
+# class MPCController:
+
+#     def __init__(self):
+#         self.director = MPCDirector()
+
+#     def compute(self, ship_state, game_state):
+
+#         result = self.director.plan(
+#             ship_pos=ship_state.position,
+#             ship_vel=ship_state.velocity,
+#             ship_speed=ship_state.speed,
+#             ship_heading=ship_state.heading,
+#             asteroid_risks=[],
+#             r_global=0.0,
+#             tau_min=0.0,
+#         )
+
+#         return result

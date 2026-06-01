@@ -1,4 +1,7 @@
-kessler-game
+KesslerGame
 numpy
 casadi
 matplotlib
+scikit-fuzzy
+scipy
+networkx
