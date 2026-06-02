@@ -57,7 +57,7 @@ class Supervisor:
 
         output = controller.compute(ship_state, game_state)
         print("Supervisor selected mode: " + self.mode)
-        #print("MPC thrust: " + str(output.thrust))
+        print(f"Output: {output}")
 
         # -------------------------------------------------
         # MPC failure handling

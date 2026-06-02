@@ -59,6 +59,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
+from risk_field import RiskField
 from toric_utils import math_angle_to_turn_rate
 
 # ---------------------------------------------------------------------------
@@ -458,22 +459,27 @@ class MPCController:
         self,
         ship_state,
         game_state,
-        asteroid_risks: list=[],
-        r_global:       float = 0.0,
         tau_min:        float = 0.0,
         mode:           str   = 'active',
         repulse_dir:    float = 0.0,
     ) -> MPCResult:
 
+        ship_pos=ship_state.position
+        ship_vel = ship_state.velocity
+        asteroids=game_state.asteroids
+        self.risk_field  = RiskField(map_size=game_state.map_size)
+
+        asteroid_risks = self.risk_field.compute_all(ship_pos,ship_vel, asteroids)
+        r_global = self.risk_field.aggregate(asteroid_risks)
 #game data
         self.map_size    = game_state.map_size
         self._casadi_slv = _CasADiSolver(self.map_size) if self._use_casadi else None
         map_size=self.map_size
 # ship states
-        ship_pos=ship_state.position,
-        ship_vel=ship_state.velocity,
-        ship_speed=ship_state.speed,
-        ship_heading=ship_state.heading,
+        ship_pos=ship_state.position
+        ship_vel=ship_state.velocity
+        ship_speed=ship_state.speed
+        ship_heading=ship_state.heading
         
 
         lambda_d = LAMBDA_D if mode == 'active' else LAMBDA_D_RESPAWN
