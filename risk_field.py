@@ -70,9 +70,9 @@ D_MEDIUM = (50.0,  90.0, 90.0, 220.0)
 D_FAR    = (90.0, 220.0, 9999., 9999.)
 
 # Size linguistic values (radius in pixels)
-S_SMALL  = (0.0,  0.0,  10.0,  18.0)
-S_MEDIUM = (10.0, 18.0,  18.0,  38.0)
-S_LARGE  = (18.0, 38.0, 999.0, 999.0)
+S_SMALL  = (0.0,  0.0,  0.0,  1.0)
+S_MEDIUM = (0.50, 1.0,  1.0,  2.0)
+S_LARGE  = (1.0, 2.0, 999.0, 999.0)
 
 # Output singletons for Sugeno-style defuzzification
 # Recalibrated: spread the outputs further apart so gradations matter

@@ -148,31 +148,41 @@ def time_to_collision(
     inside the FIS and angular profile computation.
     """
     # Toroidal relative position: from ship to asteroid
-    dx, dy = toric_delta(ast_pos, ship_pos, map_size)
-    dist = math.hypot(dx, dy)
 
-    # Surface distance (clip to 0 if already overlapping)
-    d_eff = max(dist - ast_radius - margin, 0.0)
+    W, H = map_size
 
-    if dist < 1e-6:
-        # Degenerate: ship is inside the asteroid
-        return 0.0
-
-    # Unit vector from ship toward asteroid
-    ux, uy = dx / dist, dy / dist
-
-    # Relative velocity of asteroid w.r.t. ship
     rvx = ast_vel[0] - ship_vel[0]
     rvy = ast_vel[1] - ship_vel[1]
 
-    # Closing speed (positive = approaching)
-    closing = ux * rvx + uy * rvy
+    best_ttc = math.inf
 
-    if closing <= 0.0:
-        # Asteroid is moving away or laterally — no collision on this axis
-        return math.inf
+    for kx in (-1, 0, 1):
+        for ky in (-1, 0, 1):
 
-    return d_eff / closing
+            dx = (ast_pos[0] + kx * W) - ship_pos[0]
+            dy = (ast_pos[1] + ky * H) - ship_pos[1]
+
+            dist = math.hypot(dx, dy)
+
+            if dist < 1e-6:
+                return 0.0
+
+            d_eff = max(dist - ast_radius - margin, 0.0)
+
+            ux = dx / dist
+            uy = dy / dist
+
+            closing = ux * rvx + uy * rvy
+
+            if closing <= 0:
+                continue
+
+            ttc = d_eff / closing
+
+            if ttc < best_ttc:
+                best_ttc = ttc
+
+    return best_ttc
 
 
 # ---------------------------------------------------------------------------

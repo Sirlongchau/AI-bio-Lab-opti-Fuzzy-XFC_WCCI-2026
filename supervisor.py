@@ -16,8 +16,8 @@ class Supervisor:
 
         self.MPCfail = 0
 
-        self.R_lo = 0.60
-        self.R_hi = 0.70
+        self.R_lo = 0.20
+        self.R_hi = 0.30
 
     # ---------------------------------------------------------
     # Mode selection only
@@ -50,12 +50,14 @@ class Supervisor:
     # ---------------------------------------------------------
 
     def compute(self, ship_state, game_state):
-
+        
         self.select_mode(ship_state, game_state)
 
         controller = self.controllers[self.mode]
 
         output = controller.compute(ship_state, game_state)
+        print("Supervisor selected mode: " + self.mode)
+        #print("MPC thrust: " + str(output.thrust))
 
         # -------------------------------------------------
         # MPC failure handling
@@ -64,7 +66,7 @@ class Supervisor:
         if ship_state.respawn_time_left > 0:
             self.MPCfail = 0
 
-        if self.mode == "mpc":
+        if self.mode == "mpc" and not output is None:
 
             if not output.feasible:
 
@@ -84,5 +86,7 @@ class Supervisor:
 
             else:
                 self.MPCfail = 0
+        elif output is None:
+            output= tuple([0.0, 0.0, False, False]) # default output for death validation
 
         return output
