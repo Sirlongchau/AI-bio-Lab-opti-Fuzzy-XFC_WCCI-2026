@@ -66,6 +66,9 @@ class Supervisor:
         if ship_state.respawn_time_left > 0:
             self.MPCfail = 0
 
+        if self.mode == "fuzzy":
+            command=output
+
         if self.mode == "mpc" and not output is None:
 
             if not output.feasible:
@@ -83,10 +86,12 @@ class Supervisor:
                 controller = self.controllers[self.mode]
 
                 output = controller.compute(ship_state, game_state)
+                command = output
 
             else:
                 self.MPCfail = 0
-        elif output is None:
-            output= tuple([0.0, 0.0, False, False]) # default output for death validation
+                command = (output.thrust, output.turn_rate, False, False)
+        elif self.mode == "mpc" and output is None:
+            command= tuple([0.0, 0.0, False, False]) # default output for death validation
 
-        return output
+        return command
