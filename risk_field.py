@@ -70,9 +70,9 @@ D_MEDIUM = (50.0,  90.0, 90.0, 220.0)
 D_FAR    = (90.0, 220.0, 9999., 9999.)
 
 # Size linguistic values (radius in pixels)
-S_SMALL  = (0.0,  0.0,  10.0,  18.0)
-S_MEDIUM = (10.0, 18.0,  18.0,  38.0)
-S_LARGE  = (18.0, 38.0, 999.0, 999.0)
+S_SMALL  = (0.0,  0.0,  0.0,  1.0)
+S_MEDIUM = (0.50, 1.0,  1.0,  2.0)
+S_LARGE  = (1.0, 2.0, 999.0, 999.0)
 
 # Output singletons for Sugeno-style defuzzification
 # Recalibrated: spread the outputs further apart so gradations matter
@@ -160,27 +160,42 @@ def _fis_risk(tau: float, d_surface: float, radius: float) -> float:
 
     rules: List[Tuple[float, float]] = [
         # (rule_strength, output_singleton)
-
+        ## any imminent collision is critical risk
         # --- Immediate threat rules ---
-        (min(t["critical"], d["near"]),           OUT_CRITICAL),
-        (min(t["critical"], d["medium"]),         OUT_HIGH),
-        (min(t["critical"], s["large"]),          OUT_HIGH),     # large + imminent
+        (t["critical"], OUT_CRITICAL),  # truly imminent, any distance, any size
 
         # --- Close approach ---
-        (min(t["close"], d["near"]),              OUT_HIGH),
-        (min(t["close"], d["medium"]),            OUT_MEDIUM),
-        (min(t["close"], s["large"]),             OUT_MEDIUM),
+        (min(t["close"], d["near"], s["large"]),              OUT_CRITICAL),
+        (min(t["close"], d["near"], s["medium"]),             OUT_HIGH),
+        (min(t["close"], d["near"], s["small"]),             OUT_MEDIUM),
+        (min(t["close"], d["medium"], s["large"]),            OUT_HIGH),
+        (min(t["close"], d["medium"], s["medium"]),           OUT_HIGH),
+        (min(t["close"], d["medium"], s["small"]),           OUT_MEDIUM),
+        (min(t["close"], d["far"], s["large"]),             OUT_MEDIUM),
+        (min(t["close"], d["far"], s["medium"]),            OUT_MEDIUM),
+        (min(t["close"], d["far"], s["small"]),            OUT_LOW),
 
         # --- Medium term ---
-        (min(t["medium"], d["near"]),             OUT_MEDIUM),
-        (min(t["medium"], d["medium"], s["large"]), OUT_MEDIUM), # large = more fragments
-        (min(t["medium"], d["medium"]),           OUT_LOW),
-        (min(t["medium"], d["far"]),              OUT_NEGLIGIBLE),
+        (min(t["medium"], d["near"], s["large"]),              OUT_MEDIUM),
+        (min(t["medium"], d["near"], s["medium"]),             OUT_LOW),
+        (min(t["medium"], d["near"], s["small"]),             OUT_MEDIUM),
+        (min(t["medium"], d["medium"], s["large"]),            OUT_HIGH),
+        (min(t["medium"], d["medium"], s["medium"]),           OUT_HIGH),
+        (min(t["medium"], d["medium"], s["small"]),           OUT_MEDIUM),
+        (min(t["medium"], d["far"], s["large"]),             OUT_MEDIUM),
+        (min(t["medium"], d["far"], s["medium"]),            OUT_MEDIUM),
+        (min(t["medium"], d["far"], s["small"]),            OUT_LOW),
 
         # --- Far / receding ---
-        (min(t["far"], d["near"]),               OUT_LOW),       # was near, now moving away
-        (min(t["far"], d["medium"]),             OUT_NEGLIGIBLE),
-        (min(t["far"], d["far"]),                OUT_NEGLIGIBLE),
+        (min(t["far"], d["near"], s["large"]),              OUT_LOW),
+        (min(t["far"], d["near"], s["medium"]),             OUT_LOW),
+        (min(t["far"], d["near"], s["small"]),             OUT_LOW),
+        (min(t["far"], d["medium"], s["large"]),            OUT_LOW),
+        (min(t["far"], d["medium"], s["medium"]),           OUT_LOW),
+        (min(t["far"], d["medium"], s["small"]),           OUT_NEGLIGIBLE),
+        (min(t["far"], d["far"], s["large"]),             OUT_LOW),
+        (min(t["far"], d["far"], s["medium"]),            OUT_NEGLIGIBLE),
+        (min(t["far"], d["far"], s["small"]),            OUT_NEGLIGIBLE),
     ]
 
     total_weight = sum(w for w, _ in rules)
