@@ -36,6 +36,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 
 from risk_field import RiskField
+from Parasitic_fire import FireDecision, FireState, evaluate_fire
 
 try:
     import casadi as ca
@@ -70,7 +71,7 @@ SP_EPS          =   2.0        # px — largeur softplus
 
 MAX_SOLVER_MS              = 25.0
 IPOPT_MAX_ITER             = 50
-N_AST_MAX                  = 12
+N_AST_MAX                  = 50
 INFEASIBILITY_COST_CEILING = 2000.0
 
 # Scaling — variables normalisées pour bon conditionnement IPOPT
@@ -415,6 +416,7 @@ class MPCController:
         self._casadi_slv: Optional[_CasADiSolver] = None
         self._map_size:   Optional[Tuple[float, float]] = None
         self.risk_field:  Optional[RiskField] = None
+        self._fire_state  = FireState() 
 
     def _ensure_solver(self, map_size: Tuple[float, float]) -> None:
         if self._casadi_slv is None or self._map_size != map_size:
@@ -459,6 +461,26 @@ class MPCController:
                 om_deg = math.degrees(om_0)
                 theta_star = (ship_heading + om_deg * DT) % 360.0
 
+                #parasitic fire 
+                u_opt_for_fire = self._casadi_slv._u_prev if (
+                self._use_casadi and self._casadi_slv is not None
+                ) else None
+                fire_d = evaluate_fire(
+                    mpc_result      = MPCResult,           # le MPCResult qu'on va retourner
+                    asteroid_risks  = asteroid_risks,
+                    ship_state      = ship_state,
+                    fire_state      = self._fire_state,
+                    now             = time.perf_counter(),   # ou le timestamp Kessler
+                    map_size        = game_state.map_size,
+                    u_opt           = u_opt_for_fire,
+                    opportunistic   = False,            # True si vous voulez le mode opportuniste
+                )
+                if ship_state.respawn_time_left > 0:
+                    fire_decision=False
+                else:
+                    fire_decision=fire_d.should_fire
+                
+
                 return MPCResult(
                     feasible         = cost < INFEASIBILITY_COST_CEILING,
                     theta_star       = theta_star,
@@ -468,6 +490,7 @@ class MPCController:
                     fallback_heading = repulse_dir,
                     solver_used      = 'casadi',
                     solve_time_ms    = elapsed,
+                    fire_decision = fire_decision,
                 )
 
             return MPCResult(
@@ -479,6 +502,7 @@ class MPCController:
                 fallback_heading = repulse_dir,
                 solver_used      = 'casadi_failed',
                 solve_time_ms    = (time.perf_counter() - t0) * 1000,
+                fire_decision=False,
             )
 
         # Pas d'astéroïdes ou CasADi indisponible
@@ -491,6 +515,7 @@ class MPCController:
             fallback_heading = repulse_dir,
             solver_used      = 'none',
             solve_time_ms    = 0.0,
+            fire_decision=False,
         )
 
     def viability_check(
@@ -551,3 +576,4 @@ class MPCResult:
     fallback_heading: float
     solver_used:      str
     solve_time_ms:    float
+    fire_decision:    bool
