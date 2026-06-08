@@ -31,6 +31,36 @@ _RISK_CMAP = "RdYlGn_r"   # red = high risk, green = low risk
 
 
 # ---------------------------------------------------------------------------
+# Explainability overlay
+# ---------------------------------------------------------------------------
+
+def _apply_explain_overlay(fig: plt.Figure, explain_data: dict, frame: int) -> None:
+    """Stamp the controller's decision trace onto a figure as a text annotation."""
+    R     = explain_data.get("R_global", 0.0)
+    tau   = explain_data.get("tau_min")
+    dom   = explain_data.get("dominant_rule", "?")
+    rs    = explain_data.get("rule_strengths") or {}
+    top2  = sorted(rs.items(), key=lambda kv: kv[1], reverse=True)[:2]
+    rules = "  |  ".join(f"{r}={s:.3f}" for r, s in top2) if top2 else "—"
+    emerg = explain_data.get("emergency", False)
+    sat   = explain_data.get("saturation")
+    fire  = explain_data.get("fire", False)
+    tau_s = f"{tau:.2f}s" if tau is not None else "∞"
+    sat_s = f"{sat:.2f}" if sat is not None else "?"
+    text  = (
+        f"Frame {frame}  ·  R_global={R:.3f}  ·  τ_min={tau_s}  ·  "
+        f"Emergency={'YES' if emerg else 'no'}  ·  Sat={sat_s}  ·  Fire={'YES' if fire else 'no'}\n"
+        f"Dominant: {dom}     Top active: {rules}"
+    )
+    fig.text(
+        0.01, 0.005, text,
+        ha="left", va="bottom", fontsize=7, color="white",
+        bbox=dict(facecolor=_PANEL_BG, alpha=0.85, edgecolor="#555555",
+                  boxstyle="round,pad=0.25"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # 1. Arena risk plot
 # ---------------------------------------------------------------------------
 
@@ -271,14 +301,19 @@ def debug_snapshot(
     map_size: Tuple[float, float],
     angular_profiler: Optional[AngularProfile] = None,
     save_prefix: Optional[str] = None,
+    explain_data: Optional[dict] = None,
+    frame: int = 0,
 ) -> None:
     """
     Render all three debug plots for a single game frame.
 
     Parameters
     ----------
-    save_prefix : if given, saves PNGs as  <save_prefix>_arena.png etc.
-                  Otherwise shows interactively via plt.show().
+    save_prefix  : if given, saves PNGs as  <save_prefix>_arena.png etc.
+                   Otherwise shows interactively via plt.show().
+    explain_data : controller decision trace from FuzzyController.explain().
+                   When provided, stamps an explainability overlay onto the figures.
+    frame        : current game frame number shown in the overlay.
     """
     profile   = None
     corridors = None
@@ -294,6 +329,10 @@ def debug_snapshot(
         ship_heading=ship_heading,
     )
     fig3 = fis_surface_plot()
+
+    if explain_data:
+        _apply_explain_overlay(fig1, explain_data, frame)
+        _apply_explain_overlay(fig2, explain_data, frame)
 
     if save_prefix:
         os.makedirs(HEATMAP_DIR, exist_ok=True)

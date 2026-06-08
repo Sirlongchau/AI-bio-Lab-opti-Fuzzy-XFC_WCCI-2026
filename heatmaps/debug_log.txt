@@ -1,0 +1,503 @@
+=== Controller Debug Log ===
+
+[Frame 30]
+  Mode          : MPC
+  Reason        : R_global=0.427 >= 0.3 (danger threshold)
+  R_global      : 0.4269
+  tau_min       : 3.436s
+  Dominant rule : B1_medium_risk_wide_corridor
+  Top rules     : B1_medium_risk_wide_corridor=0.775
+  Top threat    : asteroid #4  aim_bearing=152deg  tau_min=3.44s
+  Fire decision : held fire — aim error 55.1° > threshold
+  Emergency     : False
+  Saturation    : 0.214
+  thrust=-127  turn_rate=+66
+
+[Frame 60]
+  Mode          : MPC
+  Reason        : R_global=0.389 >= 0.3 (danger threshold)
+  R_global      : 0.3895
+  tau_min       : 2.332s
+  Dominant rule : B1_medium_risk_wide_corridor
+  Top rules     : B1_medium_risk_wide_corridor=1.000
+  Top threat    : asteroid #3  aim_bearing=165deg  tau_min=2.33s
+  Fire decision : held fire — aim error 53.9° > threshold
+  Emergency     : False
+  Saturation    : 0.231
+  thrust=-155  turn_rate=+117
+
+[Frame 90]
+  Mode          : MPC
+  Reason        : R_global=0.453 >= 0.3 (danger threshold)
+  R_global      : 0.4531
+  tau_min       : 1.951s
+  Dominant rule : S2_high_risk_corridor_available
+  Top rules     : S2_high_risk_corridor_available=0.016
+  Top threat    : asteroid #4  aim_bearing=244deg  tau_min=1.95s
+  Fire decision : held fire — aim error 5.5° > threshold
+  Emergency     : False
+  Saturation    : 0.400
+  thrust=-61  turn_rate=-14
+
+[Frame 120]
+  Mode          : MPC
+  Reason        : R_global=0.365 >= 0.3 (danger threshold)
+  R_global      : 0.3647
+  tau_min       : 3.682s
+  Dominant rule : B1_medium_risk_wide_corridor
+  Top rules     : B1_medium_risk_wide_corridor=1.000  E1_proximity_evade=0.191
+  Top threat    : asteroid #10  aim_bearing=244deg  tau_min=3.68s
+  Fire decision : held fire — aim error 1.9° > threshold
+  Emergency     : True
+  Saturation    : 0.211
+  thrust=-159  turn_rate=-63
+
+[Frame 150]
+  Mode          : MPC
+  Reason        : R_global=0.367 >= 0.3 (danger threshold)
+  R_global      : 0.3673
+  tau_min       : 3.926s
+  Dominant rule : E1_proximity_evade
+  Top rules     : E1_proximity_evade=1.000  B1_medium_risk_wide_corridor=0.800
+  Top threat    : asteroid #4  aim_bearing=215deg  tau_min=3.93s
+  Fire decision : held fire — aim error 2.7° > threshold
+  Emergency     : True
+  Saturation    : 0.261
+  thrust=-120  turn_rate=-20
+
+[Frame 180]
+  Mode          : MPC
+  Reason        : R_global=0.745 >= 0.3 (danger threshold)
+  R_global      : 0.7453
+  tau_min       : 0.802s
+  Dominant rule : S2_high_risk_corridor_available
+  Top rules     : S2_high_risk_corridor_available=1.000  E1_proximity_evade=0.113
+  Top threat    : asteroid #3  aim_bearing=136deg  tau_min=0.80s
+  Fire decision : held fire — aim error 0.5° > threshold
+  Emergency     : False
+  Saturation    : 0.661
+  thrust=-71  turn_rate=-51
+
+[Frame 210]
+  Mode          : MPC
+  Reason        : R_global=0.527 >= 0.3 (danger threshold)
+  R_global      : 0.5274
+  tau_min       : 1.322s
+  Dominant rule : E1_proximity_evade
+  Top rules     : E1_proximity_evade=0.910  S2_high_risk_corridor_available=0.387
+  Top threat    : asteroid #10  aim_bearing=137deg  tau_min=1.32s
+  Fire decision : held fire — aim error 36.7° > threshold
+  Emergency     : True
+  Saturation    : 0.603
+  thrust=+126  turn_rate=+13
+
+[Frame 240]
+  Mode          : MPC
+  Reason        : R_global=0.600 >= 0.3 (danger threshold)
+  R_global      : 0.5996
+  tau_min       : 1.498s
+  Dominant rule : S2_high_risk_corridor_available
+  Top rules     : S2_high_risk_corridor_available=0.748
+  Top threat    : asteroid #1  aim_bearing=213deg  tau_min=1.50s
+  Fire decision : held fire — aim error 10.7° > threshold
+  Emergency     : False
+  Saturation    : 0.744
+  thrust=-138  turn_rate=+138
+
+[Frame 270]
+  Mode          : MPC
+  Reason        : R_global=0.395 >= 0.3 (danger threshold)
+  R_global      : 0.3951
+  tau_min       : 1.835s
+  Dominant rule : fallback_aim
+  Top threat    : asteroid #11  aim_bearing=305deg  tau_min=1.83s
+  Fire decision : held fire — aim error 8.8° > threshold
+  Emergency     : False
+  Saturation    : 0.486
+  thrust=-166  turn_rate=+91
+
+[Frame 300]
+  Mode          : MPC
+  Reason        : R_global=0.481 >= 0.3 (danger threshold)
+  R_global      : 0.4811
+  tau_min       : 1.845s
+  Dominant rule : S2_high_risk_corridor_available
+  Top rules     : S2_high_risk_corridor_available=0.156
+  Top threat    : asteroid #9  aim_bearing=47deg  tau_min=1.84s
+  Fire decision : held fire — aim error 15.9° > threshold
+  Emergency     : False
+  Saturation    : 0.647
+  thrust=-69  turn_rate=+29
+
+[Frame 330]
+  Mode          : MPC
+  Reason        : R_global=0.367 >= 0.3 (danger threshold)
+  R_global      : 0.3666
+  tau_min       : 4.846s
+  Dominant rule : B3_medium_risk_narrow_corridor
+  Top rules     : B3_medium_risk_narrow_corridor=0.400
+  Top threat    : asteroid #7  aim_bearing=54deg  tau_min=4.85s
+  Fire decision : held fire — aim error 2.3° > threshold
+  Emergency     : False
+  Saturation    : 0.439
+  thrust=-12  turn_rate=+4
+
+[Frame 360]
+  Mode          : MPC
+  Reason        : R_global=0.357 >= 0.3 (danger threshold)
+  R_global      : 0.3569
+  tau_min       : 5.203s
+  Dominant rule : fallback_aim
+  Top threat    : asteroid #2  aim_bearing=303deg  tau_min=5.20s
+  Fire decision : held fire — aim error 6.8° > threshold
+  Emergency     : False
+  Saturation    : 0.450
+  thrust=+0  turn_rate=-112
+
+[Frame 390]
+  Mode          : MPC
+  Reason        : R_global=0.377 >= 0.3 (danger threshold)
+  R_global      : 0.3773
+  tau_min       : 5.756s
+  Dominant rule : B1_medium_risk_wide_corridor
+  Top rules     : B1_medium_risk_wide_corridor=1.000
+  Top threat    : asteroid #9  aim_bearing=207deg  tau_min=5.76s
+  Fire decision : held fire — aim error 0.1° > threshold
+  Emergency     : False
+  Saturation    : 0.436
+  thrust=+13  turn_rate=-55
+
+[Frame 420]
+  Mode          : MPC
+  Reason        : R_global=0.457 >= 0.3 (danger threshold)
+  R_global      : 0.4567
+  tau_min       : 3.013s
+  Dominant rule : B1_medium_risk_wide_corridor
+  Top rules     : B1_medium_risk_wide_corridor=0.771  S2_high_risk_corridor_available=0.033
+  Top threat    : asteroid #5  aim_bearing=178deg  tau_min=3.01s
+  Fire decision : held fire — aim error 2.0° > threshold
+  Emergency     : False
+  Saturation    : 0.569
+  thrust=-108  turn_rate=+60
+
+[Frame 450]
+  Mode          : MPC
+  Reason        : R_global=0.445 >= 0.3 (danger threshold)
+  R_global      : 0.4449
+  tau_min       : 3.184s
+  Dominant rule : B1_medium_risk_wide_corridor
+  Top rules     : B1_medium_risk_wide_corridor=0.845
+  Top threat    : asteroid #11  aim_bearing=208deg  tau_min=3.18s
+  Fire decision : held fire — aim error 9.7° > threshold
+  Emergency     : False
+  Saturation    : 0.511
+  thrust=+20  turn_rate=+95
+
+[Frame 480]
+  Mode          : MPC
+  Reason        : R_global=0.471 >= 0.3 (danger threshold)
+  R_global      : 0.4715
+  tau_min       : 2.950s
+  Dominant rule : B1_medium_risk_wide_corridor
+  Top rules     : B1_medium_risk_wide_corridor=0.678  E1_proximity_evade=0.256
+  Top threat    : asteroid #2  aim_bearing=281deg  tau_min=2.95s
+  Fire decision : held fire — aim error 1.5° > threshold
+  Emergency     : True
+  Saturation    : 0.622
+  thrust=+57  turn_rate=+90
+
+[Frame 510]
+  Mode          : MPC
+  Reason        : R_global=0.638 >= 0.3 (danger threshold)
+  R_global      : 0.6380
+  tau_min       : 1.486s
+  Dominant rule : fallback_aim
+  Top threat    : asteroid #12  aim_bearing=285deg  tau_min=1.49s
+  Fire decision : held fire — aim error 4.2° > threshold
+  Emergency     : False
+  Saturation    : 0.933
+  thrust=-8  turn_rate=-7
+
+[Frame 540]
+  Mode          : MPC
+  Reason        : R_global=0.414 >= 0.3 (danger threshold)
+  R_global      : 0.4144
+  tau_min       : 2.282s
+  Dominant rule : B1_medium_risk_wide_corridor
+  Top rules     : B1_medium_risk_wide_corridor=1.000
+  Top threat    : asteroid #2  aim_bearing=275deg  tau_min=2.28s
+  Fire decision : held fire — aim error 10.1° > threshold
+  Emergency     : False
+  Saturation    : 0.514
+  thrust=+16  turn_rate=+3
+
+[Frame 570]
+  Mode          : MPC
+  Reason        : R_global=0.403 >= 0.3 (danger threshold)
+  R_global      : 0.4035
+  tau_min       : 3.192s
+  Dominant rule : B3_medium_risk_narrow_corridor
+  Top rules     : B3_medium_risk_narrow_corridor=0.600
+  Top threat    : asteroid #12  aim_bearing=301deg  tau_min=3.19s
+  Fire decision : held fire — aim error 3.5° > threshold
+  Emergency     : False
+  Saturation    : 0.431
+  thrust=-15  turn_rate=+24
+
+[Frame 600]
+  Mode          : MPC
+  Reason        : R_global=0.409 >= 0.3 (danger threshold)
+  R_global      : 0.4091
+  tau_min       : 3.187s
+  Dominant rule : B1_medium_risk_wide_corridor
+  Top rules     : B1_medium_risk_wide_corridor=1.000
+  Top threat    : asteroid #16  aim_bearing=345deg  tau_min=3.19s
+  Fire decision : held fire — aim error 7.4° > threshold
+  Emergency     : False
+  Saturation    : 0.617
+  thrust=-141  turn_rate=+49
+
+[Frame 630]
+  Mode          : MPC
+  Reason        : R_global=0.477 >= 0.3 (danger threshold)
+  R_global      : 0.4771
+  tau_min       : 3.318s
+  Dominant rule : B1_medium_risk_wide_corridor
+  Top rules     : B1_medium_risk_wide_corridor=0.643  E1_proximity_evade=0.468
+  Top threat    : asteroid #11  aim_bearing=31deg  tau_min=3.32s
+  Fire decision : held fire — aim error 31.1° > threshold
+  Emergency     : True
+  Saturation    : 0.639
+  thrust=-31  turn_rate=+60
+
+[Frame 660]
+  Mode          : MPC
+  Reason        : R_global=0.676 >= 0.3 (danger threshold)
+  R_global      : 0.6762
+  tau_min       : 1.130s
+  Dominant rule : S2_high_risk_corridor_available
+  Top rules     : S2_high_risk_corridor_available=1.000  E1_proximity_evade=0.649
+  Top threat    : asteroid #6  aim_bearing=126deg  tau_min=1.13s
+  Fire decision : held fire — aim error 5.3° > threshold
+  Emergency     : True
+  Saturation    : 0.497
+  thrust=+69  turn_rate=-11
+
+[Frame 690]
+  Mode          : MPC
+  Reason        : R_global=0.668 >= 0.3 (danger threshold)
+  R_global      : 0.6682
+  tau_min       : 1.311s
+  Dominant rule : S2_high_risk_corridor_available
+  Top rules     : S2_high_risk_corridor_available=1.000  E1_proximity_evade=0.279
+  Top threat    : asteroid #18  aim_bearing=132deg  tau_min=1.31s
+  Fire decision : held fire — aim error 12.3° > threshold
+  Emergency     : True
+  Saturation    : 0.819
+  thrust=-15  turn_rate=+180
+
+[Frame 720]
+  Mode          : MPC
+  Reason        : R_global=0.499 >= 0.3 (danger threshold)
+  R_global      : 0.4989
+  tau_min       : 2.008s
+  Dominant rule : E1_proximity_evade
+  Top rules     : E1_proximity_evade=1.000  S2_high_risk_corridor_available=0.244
+  Top threat    : asteroid #12  aim_bearing=175deg  tau_min=2.01s
+  Fire decision : held fire — aim error 13.3° > threshold
+  Emergency     : True
+  Saturation    : 0.794
+  thrust=+67  turn_rate=-91
+
+[Frame 750]
+  Mode          : MPC
+  Reason        : R_global=0.532 >= 0.3 (danger threshold)
+  R_global      : 0.5322
+  tau_min       : 2.216s
+  Dominant rule : E1_proximity_evade
+  Top rules     : E1_proximity_evade=1.000  S2_high_risk_corridor_available=0.514
+  Top threat    : asteroid #12  aim_bearing=192deg  tau_min=2.22s
+  Fire decision : held fire — aim error 12.0° > threshold
+  Emergency     : True
+  Saturation    : 0.761
+  thrust=+139  turn_rate=+33
+
+[Frame 780]
+  Mode          : MPC
+  Reason        : R_global=0.859 >= 0.3 (danger threshold)
+  R_global      : 0.8592
+  tau_min       : 0.741s
+  Dominant rule : S2_high_risk_corridor_available
+  Top rules     : S2_high_risk_corridor_available=1.250  E1_proximity_evade=1.000
+  Top threat    : asteroid #1  aim_bearing=321deg  tau_min=0.74s
+  Fire decision : held fire — aim error 13.9° > threshold
+  Emergency     : True
+  Saturation    : 0.825
+  thrust=+93  turn_rate=+165
+
+[Frame 810]
+  Mode          : MPC
+  Reason        : R_global=0.789 >= 0.3 (danger threshold)
+  R_global      : 0.7893
+  tau_min       : 1.036s
+  Dominant rule : S3_high_saturation_no_corridor
+  Top rules     : S3_high_saturation_no_corridor=1.250  E1_proximity_evade=0.028
+  Top threat    : asteroid #6  aim_bearing=346deg  tau_min=1.04s
+  Fire decision : held fire — aim error 20.3° > threshold
+  Emergency     : True
+  Saturation    : 0.983
+  thrust=+0  turn_rate=+91
+
+[Frame 840]
+  Mode          : MPC
+  Reason        : R_global=0.533 >= 0.3 (danger threshold)
+  R_global      : 0.5335
+  tau_min       : 1.806s
+  Dominant rule : B3_medium_risk_narrow_corridor
+  Top rules     : B3_medium_risk_narrow_corridor=0.291  S2_high_risk_corridor_available=0.062
+  Top threat    : asteroid #6  aim_bearing=329deg  tau_min=1.81s
+  Fire decision : held fire — aim error 5.7° > threshold
+  Emergency     : False
+  Saturation    : 0.817
+  thrust=-38  turn_rate=-82
+
+[Frame 870]
+  Mode          : MPC
+  Reason        : R_global=0.450 >= 0.3 (danger threshold)
+  R_global      : 0.4501
+  tau_min       : 2.713s
+  Dominant rule : E1_proximity_evade
+  Top rules     : E1_proximity_evade=0.729  B1_medium_risk_wide_corridor=0.225
+  Top threat    : asteroid #8  aim_bearing=17deg  tau_min=2.71s
+  Fire decision : held fire — aim error 2.4° > threshold
+  Emergency     : True
+  Saturation    : 0.647
+  thrust=+12  turn_rate=+106
+
+[Frame 900]
+  Mode          : MPC
+  Reason        : R_global=0.761 >= 0.3 (danger threshold)
+  R_global      : 0.7614
+  tau_min       : 1.418s
+  Dominant rule : S2_high_risk_corridor_available
+  Top rules     : S2_high_risk_corridor_available=1.031  E1_proximity_evade=0.047
+  Top threat    : asteroid #12  aim_bearing=71deg  tau_min=1.42s
+  Fire decision : held fire — aim error 14.0° > threshold
+  Emergency     : False
+  Saturation    : 0.686
+  thrust=-99  turn_rate=+15
+
+[Frame 930]
+  Mode          : MPC
+  Reason        : R_global=0.545 >= 0.3 (danger threshold)
+  R_global      : 0.5452
+  tau_min       : 1.611s
+  Dominant rule : S2_high_risk_corridor_available
+  Top rules     : S2_high_risk_corridor_available=0.595  B1_medium_risk_wide_corridor=0.125
+  Top threat    : asteroid #2  aim_bearing=99deg  tau_min=1.61s
+  Fire decision : held fire — aim error 16.9° > threshold
+  Emergency     : False
+  Saturation    : 0.764
+  thrust=-68  turn_rate=+42
+
+[Frame 960]
+  Mode          : MPC
+  Reason        : R_global=0.418 >= 0.3 (danger threshold)
+  R_global      : 0.4176
+  tau_min       : 3.349s
+  Dominant rule : fallback_aim
+  Top threat    : asteroid #18  aim_bearing=129deg  tau_min=3.35s
+  Fire decision : held fire — aim error 6.8° > threshold
+  Emergency     : False
+  Saturation    : 0.658
+  thrust=+70  turn_rate=+100
+
+[Frame 990]
+  Mode          : MPC
+  Reason        : R_global=0.415 >= 0.3 (danger threshold)
+  R_global      : 0.4155
+  tau_min       : 4.007s
+  Dominant rule : fallback_aim
+  Top threat    : asteroid #21  aim_bearing=143deg  tau_min=4.01s
+  Fire decision : held fire — aim error 0.3° > threshold
+  Emergency     : False
+  Saturation    : 0.594
+  thrust=+0  turn_rate=-13
+
+[Frame 1020]
+  Mode          : MPC
+  Reason        : R_global=0.423 >= 0.3 (danger threshold)
+  R_global      : 0.4233
+  tau_min       : 2.342s
+  Dominant rule : fallback_aim
+  Top threat    : asteroid #8  aim_bearing=122deg  tau_min=2.34s
+  Fire decision : held fire — aim error 5.4° > threshold
+  Emergency     : False
+  Saturation    : 0.786
+  thrust=-147  turn_rate=-30
+
+[Frame 1050]
+  Mode          : MPC
+  Reason        : R_global=0.422 >= 0.3 (danger threshold)
+  R_global      : 0.4219
+  tau_min       : 2.988s
+  Dominant rule : B3_medium_risk_narrow_corridor
+  Top rules     : B3_medium_risk_narrow_corridor=0.988
+  Top threat    : asteroid #7  aim_bearing=32deg  tau_min=2.99s
+  Fire decision : held fire — aim error 1.0° > threshold
+  Emergency     : False
+  Saturation    : 0.744
+  thrust=-165  turn_rate=+6
+
+[Frame 1080]
+  Mode          : MPC
+  Reason        : R_global=0.447 >= 0.3 (danger threshold)
+  R_global      : 0.4466
+  tau_min       : 2.843s
+  Dominant rule : B3_medium_risk_narrow_corridor
+  Top rules     : B3_medium_risk_narrow_corridor=0.667
+  Top threat    : asteroid #15  aim_bearing=50deg  tau_min=2.84s
+  Fire decision : held fire — aim error 3.2° > threshold
+  Emergency     : False
+  Saturation    : 0.758
+  thrust=-152  turn_rate=+11
+
+[Frame 1110]
+  Mode          : MPC
+  Reason        : R_global=0.587 >= 0.3 (danger threshold)
+  R_global      : 0.5865
+  tau_min       : 1.834s
+  Dominant rule : S2_high_risk_corridor_available
+  Top rules     : S2_high_risk_corridor_available=0.375  E1_proximity_evade=0.198
+  Top threat    : asteroid #3  aim_bearing=52deg  tau_min=1.83s
+  Fire decision : held fire — aim error 0.2° > threshold
+  Emergency     : True
+  Saturation    : 0.842
+  thrust=-3  turn_rate=-56
+
+[Frame 1140]
+  Mode          : MPC
+  Reason        : R_global=0.503 >= 0.3 (danger threshold)
+  R_global      : 0.5029
+  tau_min       : 2.447s
+  Dominant rule : B3_medium_risk_narrow_corridor
+  Top rules     : B3_medium_risk_narrow_corridor=0.482  E1_proximity_evade=0.302
+  Top threat    : asteroid #15  aim_bearing=60deg  tau_min=2.45s
+  Fire decision : held fire — aim error 3.6° > threshold
+  Emergency     : True
+  Saturation    : 0.744
+  thrust=+72  turn_rate=+14
+
+[Frame 1170]
+  Mode          : MPC
+  Reason        : R_global=0.513 >= 0.3 (danger threshold)
+  R_global      : 0.5130
+  tau_min       : 2.883s
+  Dominant rule : E1_proximity_evade
+  Top rules     : E1_proximity_evade=0.855  S2_high_risk_corridor_available=0.375
+  Top threat    : asteroid #16  aim_bearing=59deg  tau_min=2.88s
+  Fire decision : held fire — aim error 3.4° > threshold
+  Emergency     : True
+  Saturation    : 0.772
+  thrust=+22  turn_rate=-110
+
