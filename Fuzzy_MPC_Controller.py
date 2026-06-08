@@ -1,15 +1,18 @@
 import atexit
+import os
 import matplotlib
 matplotlib.use('Agg')  # file-only backend — must be set before any pyplot import
 
 from risk_field import RiskField
 from supervisor import Supervisor
 from angular_profile import AngularProfile
-from debug_tools import debug_snapshot
+from debug_tools import debug_snapshot, replay_heatmaps
 
 # Must match supervisor.py thresholds so mode inference is accurate
 _R_LO = 0.20   # below → FUZZY mode
 _R_HI = 0.30   # above → MPC  mode
+
+_HEATMAP_DIR = "heatmaps"
 
 
 class Controller:
@@ -22,6 +25,13 @@ class Controller:
         self._frame          = 0
         self._last_snapshot  = None
         self._decision_log   = []   # lightweight per-sample explainability record
+        self._frame_snapshots = []  # raw game state per 30-frame tick — rendered at game end
+
+        # Fresh log file every game run
+        os.makedirs(_HEATMAP_DIR, exist_ok=True)
+        self._log_path = os.path.join(_HEATMAP_DIR, "debug_log.txt")
+        with open(self._log_path, "w", encoding="utf-8") as _f:
+            _f.write("=== Controller Debug Log ===\n\n")
 
         atexit.register(self._finalize)
 
@@ -35,9 +45,11 @@ class Controller:
         # Supervisor owns all control decisions
         thrust, turn_rate, fire, drop_mine = self.supervisor.compute(ship_state, game_state)
 
-        # Explainability: sample every 30 frames (≈ 0.5 s) — lightweight
+        # Every 30 frames: record decision, collect snapshot data, append to log
         if self._frame % 30 == 0:
             self._record_decision(ship_state, game_state, thrust, turn_rate, fire)
+            self._collect_frame_data(ship_state, game_state)
+            self._append_log_entry()
 
         # Keep latest frame for end-of-game heatmap
         self._last_snapshot = (
@@ -50,6 +62,50 @@ class Controller:
         )
 
         return thrust, turn_rate, fire, drop_mine
+
+    # ------------------------------------------------------------------
+    # Per-tick data collection — no rendering on the hot path
+    # ------------------------------------------------------------------
+
+    def _collect_frame_data(self, ship_state, game_state):
+        """Store raw game state for end-of-game heatmap replay — zero render overhead."""
+        try:
+            fc = getattr(self.supervisor, 'controllers', {}).get('fuzzy', None)
+            explain_data = fc.explain() if fc is not None and hasattr(fc, 'explain') else {}
+            self._frame_snapshots.append({
+                "frame"        : self._frame,
+                "ship_pos"     : tuple(ship_state.position),
+                "ship_vel"     : tuple(ship_state.velocity),
+                "ship_heading" : float(ship_state.heading),
+                "ast_data"     : [(tuple(a.position), tuple(a.velocity), float(a.size))
+                                  for a in game_state.asteroids],
+                "map_size"     : game_state.map_size,
+                "explain_data" : explain_data,
+            })
+        except Exception:
+            pass  # debug must never crash the game
+
+    # ------------------------------------------------------------------
+    # Live text log — appended every 30 frames, replaced each game
+    # ------------------------------------------------------------------
+
+    def _append_log_entry(self):
+        if not self._decision_log:
+            return
+        e = self._decision_log[-1]
+        try:
+            with open(self._log_path, "a", encoding="utf-8") as f:
+                f.write(f"[Frame {e['frame']}]\n")
+                f.write(f"  Mode          : {e['mode']}\n")
+                f.write(f"  Reason        : {e['mode_reason']}\n")
+                f.write(f"  R_global      : {e['R_global']:.4f}\n")
+                f.write(f"  Asteroids     : {e['n_asteroids']}\n")
+                f.write(f"  Top threat    : {e['top_threat']}\n")
+                f.write(f"  Fire decision : {e['fire_reason']}\n")
+                f.write(f"  thrust={e['thrust']:+.0f}  turn_rate={e['turn_rate']:+.0f}\n")
+                f.write("\n")
+        except Exception:
+            pass  # debug must never crash the game
 
     # ------------------------------------------------------------------
     # Explainability — collect one record per sample tick
@@ -121,6 +177,7 @@ class Controller:
     def _finalize(self):
         self._print_explainability_summary()
         self._save_final_heatmap()
+        replay_heatmaps(self._frame_snapshots)
 
     def _print_explainability_summary(self):
         log = self._decision_log

@@ -347,6 +347,63 @@ def debug_snapshot(
 
 
 # ---------------------------------------------------------------------------
+# End-of-game heatmap replay
+# ---------------------------------------------------------------------------
+
+def replay_heatmaps(snapshots: list, display_seconds: float = 3.0) -> None:
+    """
+    Render collected per-frame snapshots and display as a timed slideshow.
+
+    Each snapshot dict must contain:
+        frame, ship_pos, ship_vel, ship_heading,
+        ast_data (list of (pos, vel, size) tuples), map_size, explain_data.
+
+    Tries to switch to an interactive backend so figures are visible.
+    """
+    if not snapshots:
+        return
+
+    print(f"[debug_tools] Replaying {len(snapshots)} snapshots "
+          f"({display_seconds:.0f}s each)...")
+
+    class _Ast:
+        __slots__ = ("position", "velocity", "size")
+        def __init__(self, p, v, s):
+            self.position = p; self.velocity = v; self.size = s
+
+    # Switch away from the file-only Agg backend so plt.show() works
+    for _backend in ("TkAgg", "Qt5Agg", "WxAgg"):
+        try:
+            plt.switch_backend(_backend)
+            break
+        except Exception:
+            continue
+
+    for snap in snapshots:
+        try:
+            asteroids = [_Ast(p, v, s) for p, v, s in snap["ast_data"]]
+            rf    = RiskField(map_size=snap["map_size"])
+            risks = rf.compute_all(snap["ship_pos"], snap["ship_vel"], asteroids)
+
+            fig = arena_risk_plot(
+                snap["ship_pos"], snap["ship_vel"], risks, snap["map_size"],
+                title=f"Arena Risk  —  Frame {snap['frame']}",
+            )
+
+            if snap.get("explain_data"):
+                _apply_explain_overlay(fig, snap["explain_data"], snap["frame"])
+
+            plt.show(block=False)
+            plt.pause(display_seconds)
+            plt.close("all")
+        except Exception as exc:
+            print(f"[debug_tools] Replay frame {snap.get('frame')} failed: {exc}")
+            plt.close("all")
+
+    print("[debug_tools] Replay complete.")
+
+
+# ---------------------------------------------------------------------------
 # Standalone entry point — run with: python debug_tools.py
 # ---------------------------------------------------------------------------
 
