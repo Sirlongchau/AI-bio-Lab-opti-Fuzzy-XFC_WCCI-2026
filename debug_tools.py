@@ -36,42 +36,67 @@ _RISK_CMAP = "RdYlGn_r"   # red = high risk, green = low risk
 
 def arena_risk_plot(
     ship_pos: Tuple[float, float],
+    ship_vel: Tuple[float, float],
     asteroid_risks: List[AsteroidRisk],
     map_size: Tuple[float, float],
-    resolution: int = 150,
-    title: str = "Arena Risk Heatmap",
+    resolution: int = 100,
+    alpha: float = 0.6,
+    title: str = "Arena Global Risk Heatmap",
 ) -> plt.Figure:
     """
-    Top-down spatial heatmap of the arena.
+    Top-down spatial heatmap of R_global across the entire arena.
 
-    Each asteroid contributes a Gaussian risk blob centred on its position,
-    weighted by its FIS risk score R_i.  Risk peaks at the asteroid and
-    dissipates outward, respecting toric (wrap-around) geometry.
-    Asteroid outlines and ship position are overlaid on top.
+    For every grid cell, computes what the global risk R_global would be
+    if the ship were standing there — giving a true risk landscape.
+    Uses the same aggregation as RiskField: alpha*max + (1-alpha)*norm_sum.
+    Fully vectorised: no Python loops over grid points.
     """
     W, H = map_size
 
+    if not asteroid_risks:
+        fig, ax = plt.subplots(figsize=(10, 8))
+        ax.set_title("No asteroids", color="white")
+        return fig
+
     xs = np.linspace(0, W, resolution)
     ys = np.linspace(0, H, resolution)
-    XX, YY = np.meshgrid(xs, ys)
+    XX, YY = np.meshgrid(xs, ys)                          # (res, res)
 
-    Z = np.zeros((resolution, resolution))
+    # Pack asteroid arrays
+    ast_pos = np.array([ar.position for ar in asteroid_risks], dtype=float)  # (N, 2)
+    ast_vel = np.array([ar.velocity for ar in asteroid_risks], dtype=float)  # (N, 2)
+    ast_rad = np.array([ar.radius   for ar in asteroid_risks], dtype=float)  # (N,)
+    sv      = np.array(ship_vel, dtype=float)                                 # (2,)
 
-    for ar in asteroid_risks:
-        if ar.risk < 1e-4:
-            continue
-        ax_x, ax_y = ar.position
-        sigma = max(ar.radius * 3.0, 25.0)   # spread a few radii out
+    # Grid points expanded for broadcasting: (res, res, 1, 2)
+    grid = np.stack([XX, YY], axis=-1)[:, :, np.newaxis, :]
 
-        # toric displacement so blobs wrap correctly at map edges
-        dx = XX - ax_x
-        dy = YY - ax_y
-        dx -= W * np.round(dx / W)
-        dy -= H * np.round(dy / H)
+    # Toric displacement from each grid point to each asteroid: (res, res, N, 2)
+    rel = ast_pos[np.newaxis, np.newaxis, :, :] - grid
+    rel[..., 0] -= W * np.round(rel[..., 0] / W)
+    rel[..., 1] -= H * np.round(rel[..., 1] / H)
 
-        Z += ar.risk * np.exp(-(dx**2 + dy**2) / (2.0 * sigma**2))
+    dist = np.linalg.norm(rel, axis=-1)                   # (res, res, N)
+    d_surface = np.maximum(dist - ast_rad, 0.0)           # (res, res, N)
 
-    Z = np.clip(Z, 0.0, 1.0)
+    # TTC: closing speed of each asteroid toward each grid point
+    eps  = 1e-6
+    unit = rel / (dist[..., np.newaxis] + eps)            # (res, res, N, 2)
+    rel_vel = ast_vel[np.newaxis, np.newaxis, :, :] - sv  # (1, 1, N, 2)
+    closing = np.sum(unit * rel_vel, axis=-1)             # (res, res, N)
+    ttc = np.where(closing > eps, d_surface / (closing + eps), np.inf)
+
+    # Vectorised FIS approximation (matches vectorized_risk.py)
+    risk = np.clip(
+        np.exp(-ttc) * np.exp(-d_surface / 100.0) * (1.0 + ast_rad / 40.0),
+        0.0, 1.0,
+    )                                                      # (res, res, N)
+
+    # Global aggregation — same formula as RiskField.aggregate()
+    r_max      = np.max(risk, axis=-1)                    # (res, res)
+    r_sum      = np.sum(risk, axis=-1)
+    r_sum_norm = r_sum / (1.0 + r_sum)
+    Z = np.clip(alpha * r_max + (1.0 - alpha) * r_sum_norm, 0.0, 1.0)
 
     fig, ax = plt.subplots(figsize=(10, 8))
     fig.patch.set_facecolor(_DARK_BG)
@@ -105,7 +130,7 @@ def arena_risk_plot(
     ax.plot(sx, sy, "w+", markersize=14, markeredgewidth=2, label="Ship")
 
     cbar = fig.colorbar(img, ax=ax, fraction=0.03, pad=0.04)
-    cbar.set_label("Risk intensity", color="white")
+    cbar.set_label("R_global", color="white")
     cbar.ax.yaxis.set_tick_params(color="white")
     plt.setp(cbar.ax.yaxis.get_ticklabels(), color="white")
 
@@ -240,6 +265,7 @@ def fis_surface_plot(
 
 def debug_snapshot(
     ship_pos: Tuple[float, float],
+    ship_vel: Tuple[float, float],
     ship_heading: float,
     asteroid_risks: List[AsteroidRisk],
     map_size: Tuple[float, float],
@@ -261,7 +287,7 @@ def debug_snapshot(
         profile   = angular_profiler.build(asteroid_risks)
         corridors = angular_profiler.extract_corridors(profile)
 
-    fig1 = arena_risk_plot(ship_pos, asteroid_risks, map_size)
+    fig1 = arena_risk_plot(ship_pos, ship_vel, asteroid_risks, map_size)
     fig2 = angular_profile_plot(
         profile or [],
         corridors=corridors,
@@ -307,9 +333,11 @@ if __name__ == "__main__":
         FakeAsteroid((420, 380), ( 50,  40), 20.0),   # large, very close
     ]
 
+    SHIP_VEL = (0.0, 0.0)
+
     rf      = RiskField(map_size=MAP_SIZE)
     ap      = AngularProfile()
-    risks   = rf.compute_all(SHIP_POS, (0.0, 0.0), asteroids)
+    risks   = rf.compute_all(SHIP_POS, SHIP_VEL, asteroids)
     profile = ap.build(risks)
     corridors = ap.extract_corridors(profile)
 
@@ -321,7 +349,7 @@ if __name__ == "__main__":
     os.makedirs(HEATMAP_DIR, exist_ok=True)
 
     figs = [
-        ("arena",        arena_risk_plot(SHIP_POS, risks, MAP_SIZE)),
+        ("arena",        arena_risk_plot(SHIP_POS, SHIP_VEL, risks, MAP_SIZE)),
         ("angular",      angular_profile_plot(profile, corridors=corridors, ship_heading=SHIP_HDG)),
         ("fis_small",    fis_surface_plot(radius=10.0)),
         ("fis_large",    fis_surface_plot(radius=25.0, title="FIS Response Surface (large asteroid)")),
