@@ -52,7 +52,7 @@ import numpy as np
 BULLET_SPEED      = 800.0    # px/s  — à ajuster selon Kessler
 FIRE_CONE_DEG     =  6.0     # demi-angle du cône de tir "snap" (degrés)
 LEAD_CONE_DEG     = 10.0     # demi-angle élargi pour lead shot
-MIN_RISK_TO_FIRE  =  0.10    # ne pas gaspiller des bullets sur < 10 % risk
+MIN_RISK_TO_FIRE  =  0.05    # ne pas gaspiller des bullets sur < 10 % risk
 MAX_DIST_FIRE     = 600.0    # px — au-delà, trop imprécis
 MIN_DIST_FIRE     = 30.0     # px — trop proche, risque de rater + dangereux
 FIRE_COOLDOWN_S   =  0.18    # s  — cadence max (évite le spam)
@@ -241,9 +241,10 @@ def evaluate_fire(
 
     best_decision = FireDecision()
     best_priority = -1.0  # risque × confiance
-
+    max_risk = max((ar.risk for ar in asteroid_risks), default=0.0)
+    effective_min_risk = min(MIN_RISK_TO_FIRE, max_risk * 0.3)
     for idx, ar in enumerate(asteroid_risks):
-        if ar.risk < MIN_RISK_TO_FIRE:
+        if ar.risk < effective_min_risk:
             continue
 
         ax, ay = ar.position
@@ -318,7 +319,7 @@ def evaluate_fire(
                 if FIRE_CONE_DEG < angular_err <= 2 * FIRE_CONE_DEG:
                     # Proposer une légère correction sans forcer le tir
                     confidence = (1.0 - angular_err / (2 * FIRE_CONE_DEG)) * ar.risk
-                    if confidence > MIN_RISK_TO_FIRE and confidence > best_priority:
+                    if confidence > effective_min_risk and confidence > best_priority:
                         best_priority = confidence
                         best_decision = FireDecision(
                             should_fire = True,

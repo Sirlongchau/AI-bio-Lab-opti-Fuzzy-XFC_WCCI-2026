@@ -7,9 +7,14 @@ Architecture
 ------------
 Optimises hyperparameters across three layers simultaneously:
 
-  1. Supervisor  — mode-switching thresholds (R_lo, R_hi)
-  2. RiskField   — FIS membership function breakpoints, aggregation alpha
+  1. Supervisor      — mode-switching thresholds (R_lo, R_hi)
+  2. RiskField       — FIS membership function breakpoints, aggregation alpha
   3. FuzzyController — TSK rule gains, thrust setpoints
+  4. TargetSelector  — commitment, urgency, fire angle, acquisition FIS
+
+The MPC (CasADi/IPOPT) layer is intentionally excluded: its parameters
+have been validated independently and touching danger_scale, W_thrust etc.
+produces ill-conditioned NLPs that inflate solve time unpredictably.
 
 Each individual is a flat numpy array (genome) encoding all tuneable
 parameters.  A Genome class wraps encode/decode logic so the GA never
@@ -136,26 +141,69 @@ PARAM_SPECS: List[ParamSpec] = [
     ParamSpec("THR_B1",  40.0,  -100.0, 120.0,  "fuzzy"),
     ParamSpec("THR_B2",  60.0,  -100.0, 150.0,  "fuzzy"),
     ParamSpec("THR_B3", -40.0,  -200.0,  60.0,  "fuzzy"),
-    ParamSpec("THR_S1",-220.0,  -480.0,   0.0,  "fuzzy"),
-    ParamSpec("THR_S2",-120.0,  -480.0,   0.0,  "fuzzy"),
-    ParamSpec("THR_S3",-260.0,  -480.0,   0.0,  "fuzzy"),
-    ParamSpec("THR_S4",-300.0,  -480.0,   0.0,  "fuzzy"),
-    ParamSpec("THR_E1", 360.0,    0.0,  480.0,  "fuzzy"),
+    ParamSpec("THR_S1",-220.0,  -480.0,  -80.0,  "fuzzy"),
+    ParamSpec("THR_S2",-120.0,  -480.0,  -40.0,  "fuzzy"),
+    ParamSpec("THR_S3",-260.0,  -480.0,  -80.0,  "fuzzy"),
+    ParamSpec("THR_S4",-300.0,  -480.0,  -80.0,  "fuzzy"),
+    ParamSpec("THR_E1", 360.0,   120.0,  480.0,  "fuzzy"),
 
     # ---- FuzzyController — life multipliers --------------------------------
     ParamSpec("LIFE_S_MULT", 1.25, 0.8, 2.5, "fuzzy"),
     ParamSpec("LIFE_A_MULT", 1.10, 0.8, 2.0, "fuzzy"),
 
-    # ---- MPC — weights -----------------------------------------------------
-    ParamSpec("lambda_d",        0.25,  0.0,  1.0, "mpc"),
-    ParamSpec("W_thrust",       1e-5,  1e-7, 1e-3, "mpc"),
-    ParamSpec("W_omega",        5e-3,  1e-4, 5e-2, "mpc"),
-    ParamSpec("W_slow",         1e-2,  1e-4, 1e-1, "mpc"),
-    ParamSpec("S_min_target",   80.0,  20.0, 200.0,"mpc"),
-    ParamSpec("danger_scale",  120.0,  40.0, 300.0,"mpc"),
-    ParamSpec("collision_soft", 25.0,  10.0,  60.0,"mpc"),
-    ParamSpec("collision_w",     8.0,   1.0,  25.0,"mpc"),
+    # ---- TargetSelector — commitment & fire logic --------------------------
+    ParamSpec("ts_commit_frames",       12,    4,   40,   "target_selector"),
+    ParamSpec("ts_commit_switch_ratio", 1.35,  1.0,  2.5, "target_selector"),
+    ParamSpec("ts_tau_urgent_override", 0.50,  0.10, 1.20, "target_selector"),
+    ParamSpec("ts_fire_angle_threshold",10.0,  2.0,  18.0, "target_selector"),
+    ParamSpec("ts_min_score",           0.001, 0.0,  0.05, "target_selector"),
+
+    # ---- TargetSelector — urgency scoring ----------------------------------
+    ParamSpec("ts_aim_feasibility_kappa", 35.0, 5.0, 100.0, "target_selector"),
+    ParamSpec("ts_urgency_tau_cap",        2.0,  0.5,   5.0, "target_selector"),
+    ParamSpec("ts_urgency_speed_scale",  180.0, 50.0, 400.0, "target_selector"),
+    ParamSpec("ts_urgency_tau_weight",     0.65, 0.1,   0.9, "target_selector"),
+    # urgency_speed_weight = 1 - tau_weight, kept consistent via repair()
+
+    # ---- TargetSelector — predict lead -------------------------------------
+    ParamSpec("ts_predict_dt",  0.333, 0.05, 0.50, "target_selector"),
+    ParamSpec("ts_frag_penalty_large", 0.0, 0.0, 0.8, "target_selector"),
+
+    # ---- TargetSelector — acquisition FIS: heading error breakpoints -------
+    # HE_TINY  = (0, 0, b1, b2)
+    ParamSpec("ts_he_tiny_b1",    2.0,  0.5,  5.0,  "target_selector"),
+    ParamSpec("ts_he_tiny_b2",    6.0,  2.0, 15.0,  "target_selector"),
+    # HE_SMALL = (a, b, c, d)
+    ParamSpec("ts_he_small_a",    2.0,  0.5,  8.0,  "target_selector"),
+    ParamSpec("ts_he_small_c",   12.0,  5.0, 30.0,  "target_selector"),
+    ParamSpec("ts_he_small_d",   25.0, 10.0, 50.0,  "target_selector"),
+    # HE_MEDIUM = (a, b, c, d)
+    ParamSpec("ts_he_med_a",     15.0,  5.0, 40.0,  "target_selector"),
+    ParamSpec("ts_he_med_b",     30.0, 10.0, 60.0,  "target_selector"),
+    ParamSpec("ts_he_med_c",     60.0, 30.0, 120.0, "target_selector"),
+    # HE_LARGE starts at ts_he_med_c by construction
+
+    # ---- TargetSelector — acquisition FIS: distance breakpoints ------------
+    # D_CLOSE = (0, 0, c, d)
+    ParamSpec("ts_d_close_c",    90.0, 30.0, 200.0, "target_selector"),
+    ParamSpec("ts_d_close_d",   180.0, 80.0, 350.0, "target_selector"),
+    # D_MEDIUM = (a, b, c, d)
+    ParamSpec("ts_d_med_a",     120.0, 50.0, 250.0, "target_selector"),
+    ParamSpec("ts_d_med_b",     220.0, 80.0, 400.0, "target_selector"),
+    ParamSpec("ts_d_med_c",     400.0,150.0, 700.0, "target_selector"),
+    ParamSpec("ts_d_med_d",     600.0,250.0, 900.0, "target_selector"),
+
+    # ---- TargetSelector — acquisition FIS: difficulty singletons -----------
+    ParamSpec("ts_diff_easy",   0.05, 0.01, 0.30, "target_selector"),
+    ParamSpec("ts_diff_medium", 0.40, 0.15, 0.70, "target_selector"),
+    ParamSpec("ts_diff_hard",   0.85, 0.50, 1.00, "target_selector"),
+
 ]
+
+# MPC (CasADi/IPOPT) parameters are intentionally excluded from GA optimisation.
+# The MPC has been validated independently and its hyperparameters are stable.
+# Letting the GA touch danger_scale, W_thrust etc. produces ill-conditioned NLPs
+# that inflate solve time without improving gameplay.
 
 N_PARAMS = len(PARAM_SPECS)
 PARAM_NAMES = [p.name for p in PARAM_SPECS]
@@ -201,6 +249,33 @@ class Genome:
             mid = (self.genes[lo_idx] + self.genes[hi_idx]) / 2.0
             self.genes[lo_idx] = max(PARAM_SPECS[lo_idx].lo, mid - 0.05)
             self.genes[hi_idx] = min(PARAM_SPECS[hi_idx].hi, mid + 0.05)
+
+        # Enforce heading-error MF ordering: he_tiny_b1 < he_tiny_b2 < he_small_c < he_small_d
+        def _order(a_name: str, b_name: str, gap: float = 0.5) -> None:
+            ai = PARAM_NAMES.index(a_name)
+            bi = PARAM_NAMES.index(b_name)
+            if self.genes[ai] >= self.genes[bi]:
+                mid = (self.genes[ai] + self.genes[bi]) / 2.0
+                self.genes[ai] = max(PARAM_SPECS[ai].lo, mid - gap)
+                self.genes[bi] = min(PARAM_SPECS[bi].hi, mid + gap)
+
+        _order("ts_he_tiny_b1",  "ts_he_tiny_b2",  0.5)
+        _order("ts_he_tiny_b2",  "ts_he_small_c",  1.0)
+        _order("ts_he_small_c",  "ts_he_small_d",  1.0)
+        _order("ts_he_small_d",  "ts_he_med_a",    1.0)
+        _order("ts_he_med_a",    "ts_he_med_b",    2.0)
+        _order("ts_he_med_b",    "ts_he_med_c",    5.0)
+
+        # Enforce distance MF ordering
+        _order("ts_d_close_c",  "ts_d_close_d",  5.0)
+        _order("ts_d_close_d",  "ts_d_med_a",    1.0)
+        _order("ts_d_med_a",    "ts_d_med_b",   10.0)
+        _order("ts_d_med_b",    "ts_d_med_c",   10.0)
+        _order("ts_d_med_c",    "ts_d_med_d",   10.0)
+
+        # Enforce difficulty ordering: easy < medium < hard
+        _order("ts_diff_easy",  "ts_diff_medium", 0.05)
+        _order("ts_diff_medium","ts_diff_hard",   0.05)
 
     def copy(self) -> "Genome":
         return Genome(self.genes.copy())
@@ -275,21 +350,51 @@ def apply_genome_to_modules(genome: Genome) -> None:
     except ImportError:
         pass
 
-    # ---- mpc_director (CasADi MPC) -----------------------------------------
+    # ---- target_selector ---------------------------------------------------
     try:
-        import Casadi_mpc as mpc
+        import target_selector as ts
 
-        mpc.LAMBDA_D       = d["lambda_d"]
-        mpc.W_THRUST       = d["W_thrust"]
-        mpc.W_OMEGA        = d["W_omega"]
-        mpc.W_SLOW         = d["W_slow"]
-        mpc.S_MIN_TARGET   = d["S_min_target"]
-        mpc.DANGER_SCALE   = d["danger_scale"]
-        mpc.COLLISION_SOFT = d["collision_soft"]
-        mpc.COLLISION_W    = d["collision_w"]
+        ts.COMMIT_FRAMES         = int(round(d["ts_commit_frames"]))
+        ts.COMMIT_SWITCH_RATIO   = d["ts_commit_switch_ratio"]
+        ts.TAU_URGENT_OVERRIDE   = d["ts_tau_urgent_override"]
+        ts.FIRE_ANGLE_THRESHOLD  = d["ts_fire_angle_threshold"]
+        ts.MIN_SCORE_TO_TARGET   = d["ts_min_score"]
+
+        ts.AIM_FEASIBILITY_KAPPA = d["ts_aim_feasibility_kappa"]
+        ts.URGENCY_TAU_CAP       = d["ts_urgency_tau_cap"]
+        ts.URGENCY_SPEED_SCALE   = d["ts_urgency_speed_scale"]
+        ts.URGENCY_TAU_WEIGHT    = d["ts_urgency_tau_weight"]
+        ts.URGENCY_SPEED_WEIGHT  = 1.0 - d["ts_urgency_tau_weight"]
+
+        ts.PREDICT_DT            = d["ts_predict_dt"]
+        ts.FRAG_PENALTY_LARGE    = d["ts_frag_penalty_large"]
+
+        # Acquisition FIS — heading error MFs
+        b1 = d["ts_he_tiny_b1"];  b2 = d["ts_he_tiny_b2"]
+        ts.HE_TINY   = (0.0, 0.0, b1, b2)
+        sa = d["ts_he_small_a"]; sc = d["ts_he_small_c"]; sd = d["ts_he_small_d"]
+        ts.HE_SMALL  = (sa, b2, sc, sd)      # shoulder starts where TINY ends
+        ma = d["ts_he_med_a"]; mb = d["ts_he_med_b"]; mc = d["ts_he_med_c"]
+        ts.HE_MEDIUM = (ma, mb, mc, 90.0)
+        ts.HE_LARGE  = (mc, 90.0, 180.0, 180.0)
+
+        # Acquisition FIS — distance MFs
+        dcc = d["ts_d_close_c"]; dcd = d["ts_d_close_d"]
+        ts.D_CLOSE  = (0.0, 0.0, dcc, dcd)
+        dma = d["ts_d_med_a"]; dmb = d["ts_d_med_b"]
+        dmc = d["ts_d_med_c"]; dmd = d["ts_d_med_d"]
+        ts.D_MEDIUM = (dma, dmb, dmc, dmd)
+        ts.D_FAR    = (dmc, dmd, 9999.0, 9999.0)
+
+        # Acquisition FIS — difficulty singletons
+        ts.DIFF_EASY   = d["ts_diff_easy"]
+        ts.DIFF_MEDIUM = d["ts_diff_medium"]
+        ts.DIFF_HARD   = d["ts_diff_hard"]
 
     except ImportError:
         pass
+
+    # MPC (CasADi/IPOPT) constants are NOT patched — left at their validated defaults.
 
 
 def apply_genome_to_supervisor(supervisor, genome: Genome) -> None:
@@ -308,25 +413,46 @@ class FitnessResult:
     fitness:       float
     asteroids_hit: int
     deaths:        int
+    lives_remaining: int      # cumulated across all scenarios
     accuracy:      float
     eval_time_ms:  float
+    n_scenarios:   int = 1
     error:         Optional[str] = None
 
 
-# Fitness weights — tune to match competition scoring
-W_HIT      =  3.0
-W_DEATH    = -60.0
-W_ACCURACY =  2.0
-W_TIME     = -0.01    # per ms over budget
-TIME_BUDGET_MS = 20.0
+# ---------------------------------------------------------------------------
+# Fitness weights
+# ---------------------------------------------------------------------------
+# Design rationale:
+#   - Survival is the hard constraint: dying costs far more than any asteroid
+#     bonus can compensate.  W_DEATH is large and negative; W_SURVIVAL rewards
+#     lives preserved across all scenarios cumulatively.
+#   - Hits matter but must not make kamikaze profitable: even 30 extra hits
+#     (~90 pts) should not offset 3 extra deaths (~150 pts penalty).
+#   - Accuracy is a secondary objective: it signals shot quality, not raw
+#     aggression.  Clamped to [0,1] before scaling so >100% is impossible.
+#   - Eval-time penalty keeps controllers within the real-time budget.
+# ---------------------------------------------------------------------------
+
+W_HIT        =  3.0    # per asteroid hit (cumulated over scenarios)
+W_DEATH      = -50.0   # per death — massive penalty to block kamikaze strategy
+W_SURVIVAL   =  30.0   # per life preserved (max_deaths - actual_deaths)
+W_ACCURACY   =  1.5    # × accuracy % — secondary, don't dominate
+W_TIME       = -0.5    # per ms over TIME_BUDGET_MS
+TIME_BUDGET_MS = 5.0   # ms — budget par frame contrôleur
+EVAL_TIME_DISQUALIFY_MS = 30.0   # ms — disqualifié si trop lent
 
 
 def compute_fitness(result: FitnessResult) -> float:
+    # Note : eval_time_ms n'est PAS le temps contrôleur par frame —
+    # c'est le temps de simulation Kessler total / nb frames (en ms).
+    # Cette métrique est inutilisable pour pénaliser la lenteur du contrôleur,
+    # donc on l'ignore complètement.
+    acc_clamped = min(1.0, max(0.0, result.accuracy))
     f = (W_HIT      * result.asteroids_hit
        + W_DEATH    * result.deaths
-       + W_ACCURACY * result.accuracy * 100.0
-       + W_TIME     * max(0.0, result.eval_time_ms - TIME_BUDGET_MS)
-       )
+       + W_SURVIVAL * result.lives_remaining
+       + W_ACCURACY * acc_clamped * 100.0)
     return f
 
 
@@ -345,12 +471,16 @@ def _evaluate_worker(args: Tuple[np.ndarray, List[dict], dict]) -> FitnessResult
 
     try:
         from kesslergame import Scenario, KesslerGame, GraphicsType
-        from Fuzzy_MPC_Controller import Controller   # your Supervisor wrapper
+        from Fuzzy_MPC_Controller import Controller
 
-        total_hit   = 0
-        total_death = 0
-        acc_list    = []
-        time_list   = []
+        n_scenarios     = len(scenario_configs)
+        max_lives_total = n_scenarios * 3   # 3 lives per scenario
+
+        total_hit            = 0
+        total_death          = 0
+        total_lives_remaining = 0
+        acc_list             = []
+        time_list            = []
 
         for cfg in scenario_configs:
             scenario = Scenario(**cfg)
@@ -371,33 +501,44 @@ def _evaluate_worker(args: Tuple[np.ndarray, List[dict], dict]) -> FitnessResult
             score, perf = game.run(scenario=scenario, controllers=[ctrl])
 
             team = score.teams[0]
-            total_hit   += team.asteroids_hit
-            total_death += team.deaths
-            if team.shots_fired > 0:
-                acc_list.append(team.asteroids_hit / team.shots_fired)
-            time_list.append(team.mean_eval_time * 1000.0)   # s → ms
+            total_hit            += team.asteroids_hit
+            total_death          += team.deaths
+            # Lives remaining this scenario (clamped — can't be negative)
+            total_lives_remaining += max(0, 3 - team.deaths)
+
+            # Use Kessler's native accuracy (already handles fragmentation correctly)
+            acc_list.append(min(1.0, team.accuracy))
+            # mean_eval_time est en secondes mais représente le temps de
+            # simulation Kessler total / nb frames — pas le temps contrôleur.
+            # On le stocke tel quel en ms pour la pénalité relative,
+            # mais la disqualification est désactivée (seuil inatteignable).
+            time_list.append(team.mean_eval_time * 1000.0)
 
         avg_acc  = float(np.mean(acc_list))  if acc_list  else 0.0
         avg_time = float(np.mean(time_list)) if time_list else 0.0
 
         result = FitnessResult(
-            fitness       = 0.0,
-            asteroids_hit = total_hit,
-            deaths        = total_death,
-            accuracy      = avg_acc,
-            eval_time_ms  = avg_time,
+            fitness          = 0.0,
+            asteroids_hit    = total_hit,
+            deaths           = total_death,
+            lives_remaining  = total_lives_remaining,
+            accuracy         = avg_acc,
+            eval_time_ms     = avg_time,
+            n_scenarios      = n_scenarios,
         )
         result.fitness = compute_fitness(result)
         return result
 
     except Exception as exc:
         return FitnessResult(
-            fitness       = -9999.0,
-            asteroids_hit = 0,
-            deaths        = 99,
-            accuracy      = 0.0,
-            eval_time_ms  = 0.0,
-            error         = str(exc),
+            fitness          = -9999.0,
+            asteroids_hit    = 0,
+            deaths           = 99,
+            lives_remaining  = 0,
+            accuracy         = 0.0,
+            eval_time_ms     = 0.0,
+            n_scenarios      = len(scenario_configs),
+            error            = str(exc),
         )
 
 
@@ -713,15 +854,19 @@ class GeneticOptimizer:
 
     def _print_gen(self, stats: GenerationStats, elapsed: float) -> None:
         r = stats.best_result
-        hit_str  = f"{r.asteroids_hit:3d}"  if r else "  ?"
-        dead_str = f"{r.deaths:2d}"         if r else " ?"
-        acc_str  = f"{r.accuracy*100:5.1f}%"if r else "    ?"
+        n_sc = r.n_scenarios if r else 1
+        max_lives = n_sc * 3
+
+        hit_str  = f"{r.asteroids_hit:3d}"               if r else "  ?"
+        dead_str = f"{r.deaths:2d}/{max_lives}"          if r else " ?"
+        live_str = f"{r.lives_remaining:2d}/{max_lives}" if r else " ?"
+        acc_str  = f"{min(r.accuracy,1.0)*100:5.1f}%"   if r else "    ?"
         err_str  = f" [ERR: {r.error[:40]}]" if (r and r.error) else ""
         print(
             f"  Gen {stats.generation:03d}  "
             f"best={stats.best_fitness:8.2f}  "
             f"mean={stats.mean_fitness:8.2f}  "
-            f"hit={hit_str}  dead={dead_str}  acc={acc_str}  "
+            f"hit={hit_str}  dead={dead_str}  lives={live_str}  acc={acc_str}  "
             f"({elapsed:.1f}s){err_str}"
         )
 
@@ -782,9 +927,9 @@ def sensitivity_analysis(
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="GA optimizer for Kessler multimodal controller")
-    p.add_argument("--pop",      type=int,   default=30,   help="Population size")
-    p.add_argument("--gen",      type=int,   default=20,   help="Number of generations")
-    p.add_argument("--workers",  type=int,   default=4,    help="Parallel workers")
+    p.add_argument("--pop",      type=int,   default=50,   help="Population size")
+    p.add_argument("--gen",      type=int,   default=40,   help="Number of generations")
+    p.add_argument("--workers",  type=int,   default=12,    help="Parallel workers")
     p.add_argument("--elite",    type=int,   default=3,    help="Elite count")
     p.add_argument("--sigma",    type=float, default=0.08, help="Mutation sigma fraction")
     p.add_argument("--pmut",     type=float, default=0.15, help="Per-gene mutation probability")
