@@ -16,8 +16,8 @@ class Supervisor:
 
         self.MPCfail = 0
 
-        self.R_lo = 0.20
-        self.R_hi = 0.30
+        self.R_lo = 0.80
+        self.R_hi = 0.90
 
     # ---------------------------------------------------------
     # Mode selection only
@@ -56,8 +56,8 @@ class Supervisor:
         controller = self.controllers[self.mode]
 
         output = controller.compute(ship_state, game_state)
-        print("Supervisor selected mode: " + self.mode)
-        print(f"Output: {output}")
+        #print("Supervisor selected mode: " + self.mode)
+        #print(f"Output: {output}")
 
         # -------------------------------------------------
         # MPC failure handling
@@ -90,7 +90,7 @@ class Supervisor:
 
             else:
                 self.MPCfail = 0
-                command = (output.thrust, output.turn_rate, False, False)
+                command = (output.thrust, output.turn_rate, output.fire_decision, False)
         elif self.mode == "mpc" and output is None:
             command= tuple([0.0, 0.0, False, False]) # default output for death validation
 
