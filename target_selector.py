@@ -34,17 +34,17 @@ BULLET_SPEED = 800.0   # px/s (kesslergame bullet speed)
 # Fixed 1/3s lead benchmarked higher than full intercept (51.6 vs 48.6 hits,
 # fewer deaths) because the 180 deg/s turn cap can't track a perfect intercept.
 # Flip True for very fast / long-range fields where lead error dominates.
-USE_INTERCEPT_LEAD = False
+USE_INTERCEPT_LEAD = True
 
-COMMIT_FRAMES = 12
-COMMIT_SWITCH_RATIO = 1.35
+COMMIT_FRAMES = 2
+COMMIT_SWITCH_RATIO = 1.1
 TAU_URGENT_OVERRIDE = 0.50
 
-FIRE_ANGLE_THRESHOLD = 10.0
+FIRE_ANGLE_THRESHOLD = 15.0
 FIRE_ANGLE_PERFECT = 0.5
 MIN_SCORE_TO_TARGET = 0.001
 
-AIM_FEASIBILITY_KAPPA = 35.0
+AIM_FEASIBILITY_KAPPA = 50.0
 URGENCY_TAU_CAP = 2.0
 URGENCY_SPEED_SCALE = 180.0
 URGENCY_TAU_WEIGHT = 0.65
@@ -201,51 +201,61 @@ def intercept_aim_bearing(
 
 
 def _urgency_score(tau: float, closing: float) -> float:
-    if not math.isfinite(tau):
-        tau_term = 0.0
+    """
+    0 = not urgent
+    1 = immediate threat
+    """
+
+    if math.isfinite(tau):
+        tau_term = max(
+            0.0,
+            1.0 - min(tau, URGENCY_TAU_CAP) / URGENCY_TAU_CAP,
+        )
     else:
-        tau_term = 1.0 - min(max(tau, 0.0), URGENCY_TAU_CAP) / URGENCY_TAU_CAP
-    speed_term = min(1.0, max(0.0, closing) / URGENCY_SPEED_SCALE)
-    raw = URGENCY_TAU_WEIGHT * tau_term + URGENCY_SPEED_WEIGHT * speed_term
-    return _clamp(raw, 0.0, 1.0)
+        tau_term = 0.0
+
+    speed_term = min(
+        1.0,
+        max(0.0, closing) / URGENCY_SPEED_SCALE,
+    )
+
+    return _clamp(
+        URGENCY_TAU_WEIGHT * tau_term
+        + URGENCY_SPEED_WEIGHT * speed_term,
+        0.0,
+        1.0,
+    )
 
 
 # ---------------------------------------------------------------------------
-# Acquisition difficulty FIS
+# Deterministic acquisition difficulty
 # ---------------------------------------------------------------------------
 
-def _acquisition_difficulty(heading_error_abs: float, d_surface: float) -> float:
-    """Sugeno-style acquisition difficulty in [0, 1]."""
-    mu_he = {
-        "tiny": _trap(heading_error_abs, *HE_TINY),
-        "small": _trap(heading_error_abs, *HE_SMALL),
-        "medium": _trap(heading_error_abs, *HE_MEDIUM),
-        "large": _trap(heading_error_abs, *HE_LARGE),
-    }
-    mu_d = {
-        "close": _trap(d_surface, *D_CLOSE),
-        "medium": _trap(d_surface, *D_MEDIUM),
-        "far": _trap(d_surface, *D_FAR),
-    }
+MAX_ACQ_HEADING = 180.0
+MAX_ACQ_DISTANCE = 600.0
 
-    rules = [
-        (min(mu_he["tiny"], mu_d["close"]), DIFF_EASY),
-        (min(mu_he["tiny"], mu_d["medium"]), DIFF_EASY),
-        (min(mu_he["tiny"], mu_d["far"]), DIFF_MEDIUM),
-        (min(mu_he["small"], mu_d["close"]), DIFF_EASY),
-        (min(mu_he["small"], mu_d["medium"]), DIFF_MEDIUM),
-        (min(mu_he["small"], mu_d["far"]), DIFF_MEDIUM),
-        (min(mu_he["medium"], mu_d["close"]), DIFF_MEDIUM),
-        (min(mu_he["medium"], mu_d["medium"]), DIFF_MEDIUM),
-        (min(mu_he["medium"], mu_d["far"]), DIFF_HARD),
-        (mu_he["large"], DIFF_HARD),
-    ]
+ACQ_HEADING_WEIGHT = 0.70
+ACQ_DISTANCE_WEIGHT = 0.30
 
-    total_w = sum(w for w, _ in rules)
-    if total_w < 1e-9:
-        return 0.5
-    return sum(w * out for w, out in rules) / total_w
 
+def _acquisition_difficulty(
+    heading_error_abs: float,
+    d_surface: float,
+) -> float:
+    """
+    Deterministic acquisition cost in [0,1].
+
+    0 = trivial target
+    1 = difficult target
+    """
+
+    heading_term = min(1.0, heading_error_abs / MAX_ACQ_HEADING)
+    distance_term = min(1.0, d_surface / MAX_ACQ_DISTANCE)
+
+    return (
+        ACQ_HEADING_WEIGHT * heading_term
+        + ACQ_DISTANCE_WEIGHT * distance_term
+    )
 
 # ---------------------------------------------------------------------------
 # Fragmentation penalty
@@ -257,7 +267,7 @@ def _fragmentation_penalty(radius: float, delta_risk: float, lives_remaining: in
     elif delta_risk <= 0.0:
         penalty = 0.0
     else:
-        penalty = min(FRAG_PENALTY_LARGE, delta_risk * 0.5)
+        penalty = 0.0#min(FRAG_PENALTY_LARGE, delta_risk * 0.5)
 
     if lives_remaining <= 1:
         penalty *= 1.25
@@ -323,13 +333,28 @@ def _compute_score(
     if benefit < 1e-3:
         benefit = ar.risk * 0.3
 
-    d_acq = _acquisition_difficulty(aim_error_abs, ar.d_surface)
-    p_frag = _fragmentation_penalty(ar.radius, ar.delta_risk_if_destroyed, lives_remaining)
-    urgency = _urgency_score(ar.tau, c_speed)
-    urgency_factor = 0.6 + 0.4 * urgency
-    aim_feasibility = math.exp(-aim_error_abs / AIM_FEASIBILITY_KAPPA)
+    d_acq = _acquisition_difficulty(
+    aim_error_abs,
+    ar.d_surface,
+    )
 
-    score = benefit * (1.0 - d_acq) * (1.0 - p_frag) * urgency_factor * aim_feasibility
+    p_frag = _fragmentation_penalty(
+        ar.radius,
+        ar.delta_risk_if_destroyed,
+        lives_remaining,
+    )
+
+    urgency = _urgency_score(
+        ar.tau,
+        c_speed,
+    )
+
+    aim_feasibility = max(
+        0.0,
+        1.0 - aim_error_abs / 180.0,
+    )
+
+    score = benefit + 0.25 * urgency - 0.10 * d_acq
 
     return TargetScore(
         asteroid_id=ar.asteroid_id,

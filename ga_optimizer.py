@@ -612,30 +612,7 @@ class GAConfig:
     n_workers:       int   = 4      # parallel evaluation workers
     seed:            int   = 42
     checkpoint_path: str   = "ga_checkpoint.json"
-    scenario_configs: List[dict] = field(default_factory=lambda: [
-        {
-            "name":                  "GA_Scenario_Easy",
-            "num_asteroids":         10,
-            "ship_states":           [{'position': (400, 400), 'angle': 90,
-                                       'lives': 3, 'team': 1,
-                                       'mines_remaining': 3}],
-            "map_size":              (1000, 800),
-            "time_limit":            60,
-            "ammo_limit_multiplier": 0,
-            "stop_if_no_ammo":       False,
-        },
-        {
-            "name":                  "GA_Scenario_Dense",
-            "num_asteroids":         20,
-            "ship_states":           [{'position': (400, 400), 'angle': 90,
-                                       'lives': 3, 'team': 1,
-                                       'mines_remaining': 3}],
-            "map_size":              (1000, 800),
-            "time_limit":            60,
-            "ammo_limit_multiplier": 0,
-            "stop_if_no_ammo":       False,
-        },
-    ])
+    scenario_configs: List[dict] = field(default_factory=list)
     game_settings_override: dict = field(default_factory=dict)
 
 
@@ -670,6 +647,56 @@ class GeneticOptimizer:
         self.history: List[GenerationStats] = []
         self._best_genome: Optional[Genome] = None
         self._best_fitness: float = -math.inf
+        
+        if not self.cfg.scenario_configs:
+            self.cfg.scenario_configs = self._build_fixed_scenarios()
+
+    def _build_fixed_scenarios(self) -> List[dict]:
+
+        rng = np.random.default_rng(self.cfg.seed)
+
+        scenarios = []
+
+        scenario_sizes = [
+            ("Sparse", 10),
+            ("Medium", 20),
+            ("Dense", 35),
+            ("Stress", 50),
+        ]
+
+        for name, n_ast in scenario_sizes:
+
+            asteroid_states = []
+
+            for _ in range(n_ast):
+
+                asteroid_states.append({
+                    "position": (
+                        float(rng.uniform(0, 1000)),
+                        float(rng.uniform(0, 800)),
+                    ),
+                    "angle": float(rng.uniform(0, 360)),
+                    "speed": float(rng.uniform(20, 180)),
+                    "size": int(rng.integers(1, 5)),
+                })
+
+            scenarios.append({
+                "name": f"GA_{name}",
+                "asteroid_states": asteroid_states,
+                "ship_states": [{
+                    "position": (400, 400),
+                    "angle": 90,
+                    "lives": 3,
+                    "team": 1,
+                    "mines_remaining": 3,
+                }],
+                "map_size": (1000, 800),
+                "time_limit": 60,
+                "ammo_limit_multiplier": 0,
+                "stop_if_no_ammo": False,
+            })
+
+        return scenarios
 
     # ------------------------------------------------------------------
     def _init_population(self) -> List[Genome]:
@@ -933,10 +960,10 @@ def sensitivity_analysis(
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="GA optimizer for Kessler multimodal controller")
-    p.add_argument("--pop",      type=int,   default=40,   help="Population size")
+    p.add_argument("--pop",      type=int,   default=50,   help="Population size")
     p.add_argument("--gen",      type=int,   default=20,   help="Number of generations")
-    p.add_argument("--workers",  type=int,   default=12,    help="Parallel workers")
-    p.add_argument("--elite",    type=int,   default=3,    help="Elite count")
+    p.add_argument("--workers",  type=int,   default=10,    help="Parallel workers")
+    p.add_argument("--elite",    type=int,   default=1,    help="Elite count")
     p.add_argument("--sigma",    type=float, default=0.08, help="Mutation sigma fraction")
     p.add_argument("--pmut",     type=float, default=0.25, help="Per-gene mutation probability")
     p.add_argument("--seed",     type=int,   default=42,   help="RNG seed")
