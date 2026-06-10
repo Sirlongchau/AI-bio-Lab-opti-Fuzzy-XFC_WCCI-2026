@@ -566,10 +566,16 @@ def uniform_crossover(
 ) -> Tuple[Genome, Genome]:
     """Swap each gene with probability p_swap."""
     mask  = rng.random(N_PARAMS) < p_swap
+    alpha=rng.random()
+    beta = rng.random()
     child_a = parent_a.copy()
     child_b = parent_b.copy()
-    child_a.genes[mask] = parent_b.genes[mask]
-    child_b.genes[mask] = parent_a.genes[mask]
+    child_a.genes=alpha*parent_a.genes+(1-alpha)*parent_b.genes
+    child_b.genes=beta*parent_a.genes+(1-beta)*parent_b.genes
+    # child_a = parent_a.copy()
+    # child_b = parent_b.copy()
+    # child_a.genes[mask] = parent_b.genes[mask]
+    # child_b.genes[mask] = parent_a.genes[mask]
     return child_a, child_b
 
 
@@ -927,12 +933,12 @@ def sensitivity_analysis(
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="GA optimizer for Kessler multimodal controller")
-    p.add_argument("--pop",      type=int,   default=50,   help="Population size")
-    p.add_argument("--gen",      type=int,   default=40,   help="Number of generations")
+    p.add_argument("--pop",      type=int,   default=40,   help="Population size")
+    p.add_argument("--gen",      type=int,   default=20,   help="Number of generations")
     p.add_argument("--workers",  type=int,   default=12,    help="Parallel workers")
     p.add_argument("--elite",    type=int,   default=3,    help="Elite count")
     p.add_argument("--sigma",    type=float, default=0.08, help="Mutation sigma fraction")
-    p.add_argument("--pmut",     type=float, default=0.15, help="Per-gene mutation probability")
+    p.add_argument("--pmut",     type=float, default=0.25, help="Per-gene mutation probability")
     p.add_argument("--seed",     type=int,   default=42,   help="RNG seed")
     p.add_argument("--resume",   type=str,   default=None, help="Resume from checkpoint JSON")
     p.add_argument("--export",   type=str,   default="best_params.json",

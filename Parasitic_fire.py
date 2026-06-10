@@ -50,12 +50,12 @@ import numpy as np
 # ---------------------------------------------------------------------------
 
 BULLET_SPEED      = 800.0    # px/s  — à ajuster selon Kessler
-FIRE_CONE_DEG     =  6.0     # demi-angle du cône de tir "snap" (degrés)
-LEAD_CONE_DEG     = 10.0     # demi-angle élargi pour lead shot
-MIN_RISK_TO_FIRE  =  0.05    # ne pas gaspiller des bullets sur < 10 % risk
+FIRE_CONE_DEG     =  3.0     # demi-angle du cône de tir "snap" (degrés)
+LEAD_CONE_DEG     = 6.0     # demi-angle élargi pour lead shot
+MIN_RISK_TO_FIRE  =  0.0    # ne pas gaspiller des bullets sur < 10 % risk
 MAX_DIST_FIRE     = 600.0    # px — au-delà, trop imprécis
-MIN_DIST_FIRE     = 30.0     # px — trop proche, risque de rater + dangereux
-FIRE_COOLDOWN_S   =  0.18    # s  — cadence max (évite le spam)
+MIN_DIST_FIRE     = 10.0     # px — trop proche, risque de rater + dangereux
+FIRE_COOLDOWN_S   =  0.1    # s  — cadence max (évite le spam)
 
 # Paramètres de la trajectoire (doivent correspondre à mpc_director.py)
 HORIZON_STEPS = 8
