@@ -43,22 +43,6 @@ RESPONSE_TURN_BOOST = 1.25
 RESPONSE_THRUST_BOOST = 1.18
 RESPONSIVE_SPEED_TARGET = 110.0
 RESPONSIVE_MIN_THRUST = 120.0
-# Avoidance/search behavior
-AVOID_RISK_START = 0.22
-AVOID_TAU_START = 1.35
-AVOID_PROX_START = 155.0
-AVOID_MAX_BLEND = 0.88
-AVOID_CORR_GAIN = 6.75
-AVOID_REPULSE_GAIN = 7.50
-AVOID_BRAKE_THRUST = -320.0
-AVOID_SAFE_THRUST = 90.0
-
-SEARCH_FRONT_CONE_DEG = 30.0
-SEARCH_RISK_MAX = 0.30
-SEARCH_TAU_MIN = 1.00
-SEARCH_TURN_GAIN = 4.75
-SEARCH_THRUST = 145.0
-SEARCH_MIN_TURN = 55.0
 
 # Membership functions
 AIM_LOCKED = (0.0, 0.0, 0.5, 2.0)
@@ -73,11 +57,11 @@ CORR_MEDIUM = (12.0, 25.0, 50.0, 80.0)
 CORR_LARGE = (60.0, 90.0, 180.0, 180.0)
 
 R_LOW = (0.0, 0.0, 0.12, 0.25)
-R_MEDIUM = (0.12, 0.22, 0.42, 0.62)
-R_HIGH = (0.35, 0.52, 1.0, 1.0)
+R_MEDIUM = (0.18, 0.28, 0.42, 0.58)
+R_HIGH = (0.45, 0.65, 1.0, 1.0)
 
-TAU_IMMINENT = (0.0, 0.0, 0.30, 0.65)
-TAU_CLOSE = (0.20, 0.40, 0.95, 1.45)
+TAU_IMMINENT = (0.0, 0.0, 0.20, 0.45)
+TAU_CLOSE = (0.25, 0.45, 0.75, 1.10)
 TAU_PRESSURE = (0.75, 1.10, 1.50, 2.00)
 TAU_SAFE = (1.50, 2.00, 99.0, 99.0)
 
@@ -96,7 +80,7 @@ SAT_MEDIUM = (0.30, 0.45, 0.60, 0.75)
 SAT_HIGH = (0.65, 0.80, 1.0, 1.0)
 
 # Nearest-asteroid surface distance (px) â€” catches threats TTC misses
-PROX_VERYCLOSE = (0.0, 0.0, 70.0, 150.0)
+PROX_VERYCLOSE = (0.0, 0.0, 45.0, 90.0)
 
 # --- Rule gains (turn = gain * error) and thrust setpoints (exposed for optimization) ---
 K_A1 = 0.05; THR_A1 = 0.0
@@ -106,15 +90,15 @@ K_A4 = 4.0;  THR_A4 = 0.0
 CA_B1_AIM = 1.65; CA_B1_CORR = 1.35; THR_B1 = 40.0
 CA_B2_AIM = 0.90; CA_B2_CORR = 2.45; THR_B2 = 60.0
 K_B3 = 4.0;  THR_B3 = -40.0
-K_S1 = 7.0;  THR_S1 = -260.0
-K_S2 = 6.5;  THR_S2 = -180.0
-K_S3 = 7.0;  THR_S3 = -320.0
-K_S4 = 6.5;  THR_S4 = -360.0
-K_E1 = 7.5;  THR_E1 = 420.0
+K_S1 = 5.0;  THR_S1 = -220.0
+K_S2 = 4.5;  THR_S2 = -120.0
+K_S3 = 5.0;  THR_S3 = -260.0
+K_S4 = 4.0;  THR_S4 = -300.0
+K_E1 = 5.0;  THR_E1 = 360.0
 K_FALLBACK = 3.0
-LIFE_S_MULT = 1.00
-LIFE_A_MULT = 1.00
-EMERGENCY_STRENGTH_TH = 0.08
+LIFE_S_MULT = 1.25
+LIFE_A_MULT = 1.10
+EMERGENCY_STRENGTH_TH = 0.15
 
 
 def _clamp(x: float, lo: float, hi: float) -> float:
@@ -216,7 +200,6 @@ class FuzzyController:
         )
 
         thrust, turn_rate, emergency, dominant_rule, rule_strengths = self._tsk_infer(inputs)
-        thrust, turn_rate, emergency = self._avoidance_and_search_bias(inputs, thrust, turn_rate, emergency)
 
         if not emergency and speed < RESPONSIVE_SPEED_TARGET:
             thrust = max(thrust, RESPONSIVE_MIN_THRUST)
@@ -283,7 +266,7 @@ class FuzzyController:
         tau_for_mf = tau_min if math.isfinite(tau_min) else 99.0
         tau_inv = 0.0 if not math.isfinite(tau_min) else 1.0 / (0.1 + max(0.0, tau_min))
 
-        life_aggression = 1.0
+        life_aggression = 1.0 if lives >= 3 else 0.75 if lives == 2 else 0.45
 
         return {
             "se_aim": se_aim,
@@ -432,8 +415,17 @@ class FuzzyController:
             True,
         )
 
-        # Life-neutral behavior. All lives use the same rule weights.
-        rules = rules
+        # Life-sensitive bias.  Last life increases survival-rule weight; full lives
+        # slightly increase attack-rule influence.
+        life = x["life_aggression"]
+        adjusted: List[Tuple[str, float, float, float, bool]] = []
+        for name, w, turn, thrust, emergency in rules:
+            if name.startswith("S") and life < 0.6:
+                w *= LIFE_S_MULT
+            elif name.startswith("A") and life > 0.9:
+                w *= LIFE_A_MULT
+            adjusted.append((name, w, turn, thrust, emergency))
+        rules = adjusted
 
         if not rules:
             return _clamp(0.0, THRUST_MIN, THRUST_MAX), _clamp(K_FALLBACK * se_aim, TURN_MIN, TURN_MAX), False, "fallback_aim", {}
@@ -449,79 +441,6 @@ class FuzzyController:
         rule_strengths = {name: round(w, 4) for name, w, _, _, _ in rules}
         return thrust, turn, emergency, dominant[0], rule_strengths
 
-
-    def _avoidance_and_search_bias(
-        self,
-        x: Dict[str, float],
-        thrust: float,
-        turn_rate: float,
-        emergency: bool,
-    ) -> Tuple[float, float, bool]:
-        tau = x["tau_min"] if math.isfinite(x["tau_min"]) else 99.0
-
-        risk_pressure = _clamp(
-            (x["R_global"] - AVOID_RISK_START) / max(0.01, 1.0 - AVOID_RISK_START),
-            0.0,
-            1.0,
-        )
-        tau_pressure = _clamp(
-            (AVOID_TAU_START - tau) / max(0.01, AVOID_TAU_START),
-            0.0,
-            1.0,
-        )
-        prox_pressure = _clamp(
-            (AVOID_PROX_START - x["nearest_surface"]) / max(1.0, AVOID_PROX_START),
-            0.0,
-            1.0,
-        )
-
-        avoid_blend = min(
-            AVOID_MAX_BLEND,
-            max(risk_pressure, tau_pressure, prox_pressure),
-        )
-
-        if avoid_blend > 0.0:
-            use_repulse = x["corridor_width"] <= 5.0 or x["saturation"] > 0.65
-
-            if use_repulse:
-                avoid_error = x["se_repulse"]
-                avoid_turn = AVOID_REPULSE_GAIN * avoid_error
-            else:
-                avoid_error = x["se_corr"]
-                avoid_turn = AVOID_CORR_GAIN * avoid_error
-
-            avoid_turn = _clamp(avoid_turn, TURN_MIN, TURN_MAX)
-
-            if abs(avoid_error) > 60.0 or x["speed"] > 180.0:
-                avoid_thrust = AVOID_BRAKE_THRUST
-            else:
-                avoid_thrust = AVOID_SAFE_THRUST
-
-            thrust = (1.0 - avoid_blend) * thrust + avoid_blend * avoid_thrust
-            turn_rate = (1.0 - avoid_blend) * turn_rate + avoid_blend * avoid_turn
-
-            if avoid_blend > 0.60:
-                emergency = True
-
-        # If the selected target is not in front and danger is low, actively scan/turn toward it.
-        front_empty = x["e_aim"] > SEARCH_FRONT_CONE_DEG
-        safe_to_search = x["R_global"] < SEARCH_RISK_MAX and tau > SEARCH_TAU_MIN
-
-        if safe_to_search and front_empty:
-            search_turn = _clamp(SEARCH_TURN_GAIN * x["se_aim"], TURN_MIN, TURN_MAX)
-
-            if abs(search_turn) < SEARCH_MIN_TURN:
-                direction = 1.0 if x["se_aim"] >= 0.0 else -1.0
-                search_turn = direction * SEARCH_MIN_TURN
-
-            turn_rate = 0.25 * turn_rate + 0.75 * search_turn
-            thrust = max(thrust, SEARCH_THRUST)
-
-        return (
-            _clamp(thrust, THRUST_MIN, THRUST_MAX),
-            _clamp(turn_rate, TURN_MIN, TURN_MAX),
-            emergency,
-        )
     def _post_process(self, thrust: float, turn_rate: float) -> Tuple[float, float]:
         turn_rate = _clamp(turn_rate, TURN_MIN, TURN_MAX)
         thrust = _clamp(thrust, THRUST_MIN, THRUST_MAX)
@@ -625,6 +544,4 @@ class FuzzyController:
         if cooldown is not None and cooldown > 0:
             return False
         return True
-
-
 

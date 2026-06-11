@@ -1,0 +1,315 @@
+﻿"""
+Fuzzy_MPC_Controller.py
+=======================
+Competition entry point with final hard safety/search layer.
+"""
+
+import math
+from supervisor import Supervisor
+
+
+THRUST_MIN = -480.0
+THRUST_MAX = 480.0
+TURN_MIN = -180.0
+TURN_MAX = 180.0
+
+# Hard edge guard
+EDGE_MARGIN = 260.0
+EDGE_CRITICAL = 150.0
+EDGE_LOOKAHEAD = 1.40
+EDGE_TURN_GAIN = 3.20
+EDGE_ESCAPE_THRUST = 470.0
+EDGE_BRAKE_THRUST = -460.0
+EDGE_MAX_SAFE_SPEED = 130.0
+
+# Hard asteroid avoidance
+AST_AVOID_RADIUS = 240.0
+AST_PANIC_RADIUS = 135.0
+AST_LOOKAHEAD = 1.00
+AST_TTC_PANIC = 1.20
+AST_TURN_GAIN = 3.40
+AST_ESCAPE_THRUST = 450.0
+AST_BRAKE_THRUST = -420.0
+
+# Search behavior
+SEARCH_FRONT_CONE = 35.0
+SEARCH_TURN_RATE = 95.0
+SEARCH_THRUST = 135.0
+SEARCH_MAX_RISK_DIST = 260.0
+
+
+def _clamp(x, lo, hi):
+    return max(lo, min(hi, x))
+
+
+def _get(obj, name, default=None):
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
+
+
+def _angle_diff(target, current):
+    return (target - current + 180.0) % 360.0 - 180.0
+
+
+def _bearing_to(dx, dy):
+    return math.degrees(math.atan2(dy, dx))
+
+
+def _toric_delta(ax, ay, bx, by, map_w, map_h):
+    dx = ax - bx
+    dy = ay - by
+
+    if abs(dx) > map_w * 0.5:
+        dx -= math.copysign(map_w, dx)
+
+    if abs(dy) > map_h * 0.5:
+        dy -= math.copysign(map_h, dy)
+
+    return dx, dy
+
+
+class Controller:
+    def __init__(self):
+        self.supervisor = Supervisor()
+        self._search_dir = 1.0
+
+    def actions(self, ship_state, game_state):
+        thrust, turn_rate, fire, mine = self.supervisor.compute(ship_state, game_state)
+
+        thrust, turn_rate, fire = self._hard_asteroid_guard(
+            ship_state, game_state, thrust, turn_rate, fire
+        )
+
+        thrust, turn_rate, fire = self._hard_edge_guard(
+            ship_state, game_state, thrust, turn_rate, fire
+        )
+
+        thrust, turn_rate, fire = self._search_if_front_empty(
+            ship_state, game_state, thrust, turn_rate, fire
+        )
+
+        return (
+            _clamp(thrust, THRUST_MIN, THRUST_MAX),
+            _clamp(turn_rate, TURN_MIN, TURN_MAX),
+            bool(fire),
+            bool(mine),
+        )
+
+    def _hard_asteroid_guard(self, ship_state, game_state, thrust, turn_rate, fire):
+        map_size = _get(game_state, "map_size", None)
+        asteroids = _get(game_state, "asteroids", [])
+
+        if map_size is None or not asteroids:
+            return thrust, turn_rate, fire
+
+        map_w, map_h = float(map_size[0]), float(map_size[1])
+
+        sx, sy = _get(ship_state, "position", (map_w * 0.5, map_h * 0.5))
+        svx, svy = _get(ship_state, "velocity", (0.0, 0.0))
+        heading = float(_get(ship_state, "heading", _get(ship_state, "angle", 0.0)))
+
+        sx, sy = float(sx), float(sy)
+        svx, svy = float(svx), float(svy)
+
+        best = None
+
+        for ast in asteroids:
+            apos = _get(ast, "position", None)
+            if apos is None:
+                continue
+
+            avx, avy = _get(ast, "velocity", (0.0, 0.0))
+            radius = float(_get(ast, "radius", _get(ast, "size", 20.0)))
+
+            ax, ay = float(apos[0]), float(apos[1])
+            avx, avy = float(avx), float(avy)
+
+            dx, dy = _toric_delta(ax, ay, sx, sy, map_w, map_h)
+            dist = math.hypot(dx, dy)
+            surface = dist - radius
+
+            rvx = avx - svx
+            rvy = avy - svy
+
+            closing = 0.0
+            if dist > 1e-6:
+                closing = -((dx * rvx + dy * rvy) / dist)
+
+            ttc = 99.0
+            if closing > 1e-6:
+                ttc = max(0.0, surface / closing)
+
+            future_dx = dx + rvx * AST_LOOKAHEAD
+            future_dy = dy + rvy * AST_LOOKAHEAD
+            future_surface = math.hypot(future_dx, future_dy) - radius
+
+            danger = 0.0
+            if surface < AST_AVOID_RADIUS:
+                danger = max(danger, (AST_AVOID_RADIUS - surface) / AST_AVOID_RADIUS)
+            if future_surface < AST_AVOID_RADIUS:
+                danger = max(danger, (AST_AVOID_RADIUS - future_surface) / AST_AVOID_RADIUS)
+            if ttc < AST_TTC_PANIC:
+                danger = max(danger, (AST_TTC_PANIC - ttc) / AST_TTC_PANIC)
+            if surface < AST_PANIC_RADIUS:
+                danger = 1.0
+
+            if danger <= 0.0:
+                continue
+
+            if best is None or danger > best[0]:
+                best = (danger, dx, dy, surface, ttc)
+
+        if best is None:
+            return thrust, turn_rate, fire
+
+        danger, dx, dy, surface, ttc = best
+
+        # Turn away from asteroid center.
+        away_bearing = _bearing_to(-dx, -dy)
+        err = _angle_diff(away_bearing, heading)
+
+        avoid_turn = _clamp(AST_TURN_GAIN * err, TURN_MIN, TURN_MAX)
+
+        facing_away = abs(err) < 65.0
+
+        if facing_away:
+            avoid_thrust = AST_ESCAPE_THRUST
+        else:
+            avoid_thrust = AST_BRAKE_THRUST
+
+        blend = _clamp(max(0.55, danger), 0.0, 1.0)
+
+        thrust = (1.0 - blend) * thrust + blend * avoid_thrust
+        turn_rate = (1.0 - blend) * turn_rate + blend * avoid_turn
+
+        if danger > 0.40:
+            fire = False
+
+        return thrust, turn_rate, fire
+
+    def _hard_edge_guard(self, ship_state, game_state, thrust, turn_rate, fire):
+        map_size = _get(game_state, "map_size", None)
+
+        if map_size is None:
+            return thrust, turn_rate, fire
+
+        map_w, map_h = float(map_size[0]), float(map_size[1])
+
+        x, y = _get(ship_state, "position", (map_w * 0.5, map_h * 0.5))
+        vx, vy = _get(ship_state, "velocity", (0.0, 0.0))
+
+        x, y = float(x), float(y)
+        vx, vy = float(vx), float(vy)
+
+        fx = x + vx * EDGE_LOOKAHEAD
+        fy = y + vy * EDGE_LOOKAHEAD
+
+        left_d = min(x, fx)
+        right_d = map_w - max(x, fx)
+        bottom_d = min(y, fy)
+        top_d = map_h - max(y, fy)
+
+        edge_dist = min(left_d, right_d, bottom_d, top_d)
+
+        if edge_dist >= EDGE_MARGIN:
+            return thrust, turn_rate, fire
+
+        severity = _clamp((EDGE_MARGIN - edge_dist) / EDGE_MARGIN, 0.0, 1.0)
+
+        if edge_dist <= EDGE_CRITICAL:
+            severity = 1.0
+
+        center_x = map_w * 0.5
+        center_y = map_h * 0.5
+
+        desired_heading = _bearing_to(center_x - x, center_y - y)
+        heading = float(_get(ship_state, "heading", _get(ship_state, "angle", 0.0)))
+
+        err = _angle_diff(desired_heading, heading)
+        escape_turn = _clamp(EDGE_TURN_GAIN * err, TURN_MIN, TURN_MAX)
+
+        speed = math.hypot(vx, vy)
+        facing_center = abs(err) <= 60.0
+
+        if facing_center and speed < EDGE_MAX_SAFE_SPEED:
+            escape_thrust = EDGE_ESCAPE_THRUST
+        else:
+            escape_thrust = EDGE_BRAKE_THRUST
+
+        blend = _clamp(max(0.65, severity), 0.0, 1.0)
+
+        thrust = (1.0 - blend) * thrust + blend * escape_thrust
+        turn_rate = (1.0 - blend) * turn_rate + blend * escape_turn
+
+        if severity > 0.35:
+            fire = False
+
+        return thrust, turn_rate, fire
+
+    def _search_if_front_empty(self, ship_state, game_state, thrust, turn_rate, fire):
+        map_size = _get(game_state, "map_size", None)
+        asteroids = _get(game_state, "asteroids", [])
+
+        if map_size is None or not asteroids:
+            return thrust, turn_rate, fire
+
+        map_w, map_h = float(map_size[0]), float(map_size[1])
+
+        sx, sy = _get(ship_state, "position", (map_w * 0.5, map_h * 0.5))
+        heading = float(_get(ship_state, "heading", _get(ship_state, "angle", 0.0)))
+
+        sx, sy = float(sx), float(sy)
+
+        nearest_dist = 999999.0
+        best_err = None
+        front_has_target = False
+
+        for ast in asteroids:
+            apos = _get(ast, "position", None)
+            if apos is None:
+                continue
+
+            ax, ay = float(apos[0]), float(apos[1])
+            dx, dy = _toric_delta(ax, ay, sx, sy, map_w, map_h)
+            dist = math.hypot(dx, dy)
+
+            if dist < nearest_dist:
+                nearest_dist = dist
+                bearing = _bearing_to(dx, dy)
+                best_err = _angle_diff(bearing, heading)
+
+            bearing = _bearing_to(dx, dy)
+            err = abs(_angle_diff(bearing, heading))
+
+            if err <= SEARCH_FRONT_CONE:
+                front_has_target = True
+
+        if front_has_target:
+            return thrust, turn_rate, fire
+
+        if nearest_dist < SEARCH_MAX_RISK_DIST:
+            return thrust, turn_rate, fire
+
+        if best_err is None:
+            search_turn = SEARCH_TURN_RATE * self._search_dir
+        else:
+            self._search_dir = 1.0 if best_err >= 0.0 else -1.0
+            search_turn = _clamp(3.0 * best_err, TURN_MIN, TURN_MAX)
+
+            if abs(search_turn) < SEARCH_TURN_RATE:
+                search_turn = SEARCH_TURN_RATE * self._search_dir
+
+        thrust = max(thrust, SEARCH_THRUST)
+        turn_rate = search_turn
+        fire = False
+
+        return thrust, turn_rate, fire
+
+    def explain(self):
+        fz = self.supervisor.controllers.get("fuzzy")
+        return fz.explain() if hasattr(fz, "explain") else {}
+
+    @property
+    def name(self) -> str:
+        return "fuzzy_mpc_hybrid_controller"

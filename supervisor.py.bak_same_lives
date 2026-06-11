@@ -1,4 +1,4 @@
-﻿from risk_field import RiskField
+from risk_field import RiskField
 from test_controller_fuzzy import FuzzyController
 from Casadi_mpc import MPCController
 from angular_profile import AngularProfile
@@ -32,18 +32,11 @@ class Supervisor:
             self._map_size = map_size
             self.risk_field = RiskField(map_size=map_size)
 
-    def _reset_controller_memory(self):
-        for ctrl in self.controllers.values():
-            if hasattr(ctrl, "prev_turn_rate"):
-                ctrl.prev_turn_rate = 0.0
-            if hasattr(ctrl, "prev_thrust"):
-                ctrl.prev_thrust = 0.0
     def select_mode(self, ship_state, game_state):
         self._ensure(game_state.map_size)
 
         if getattr(ship_state, "respawn_time_left", 0.0) > 0:
-            self._reset_controller_memory()
-            self.mode = "fuzzy"
+            self.mode = "mpc"
             return
 
         risks = self.risk_field.compute_all(
@@ -84,4 +77,3 @@ class Supervisor:
             return output.thrust, output.turn_rate, False, False
 
         return 0.0, 0.0, False, False
-

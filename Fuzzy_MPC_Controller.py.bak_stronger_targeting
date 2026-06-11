@@ -24,8 +24,8 @@ TURN_MAX = 180.0
 SHIP_RADIUS = 18.0
 BULLET_SPEED = 800.0
 
-CRUISE_THRUST = 285.0
-SEARCH_THRUST = 165.0
+CRUISE_THRUST = 245.0
+SEARCH_THRUST = 130.0
 EVADE_THRUST = 460.0
 TURN_ONLY_THRUST = 25.0
 EDGE_REVERSE_THRUST = -190.0
@@ -33,10 +33,10 @@ EDGE_REVERSE_THRUST = -190.0
 MAX_COMFORT_SPEED = 215.0
 MAX_EDGE_SPEED = 145.0
 
-TURN_KP = 5.85
-TURN_KD = 1.35
-TURN_FILTER = 0.10
-THRUST_FILTER = 0.14
+TURN_KP = 4.35
+TURN_KD = 1.15
+TURN_FILTER = 0.18
+THRUST_FILTER = 0.20
 
 EDGE_MARGIN = 285.0
 EDGE_PANIC = 155.0
@@ -50,25 +50,14 @@ CLOSEST_DANGER = 165.0
 AVOID_HORIZON = 2.25
 AVOID_WEIGHT = 4.20
 
-FRONT_CONE_DEG = 60.0
-FIRE_CONE_DEG = 28.0
-FIRE_CONE_CLOSE_DEG = 42.0
-FIRE_CONE_PANIC_DEG = 22.0
-FIRE_CLOSE_SURFACE = 620.0
-FIRE_HAZARD_BLOCK = 999.0
-FIRE_EDGE_BLOCK = 999.0
-SEARCH_MIN_TURN = 115.0
-WRAP_EPSILON = 1.0
-NO_WRAP_SHOOTING = True
-FIRE_OPPORTUNISTIC_CONE_DEG = 9.0
-TARGET_LOCK_MAX_MISSES = 18
-TARGET_SWITCH_SCORE_MARGIN = 1.15
-TARGET_LOCK_FORGET_CONE_DEG = 95.0
-TARGET_LOCK_CONE_DEG = 55.0
-TARGET_LOCK_BONUS = 3.25
-FIRE_MAX_SURFACE = 950.0
-FIRE_INTERCEPT_CONE_DEG = 26.0
-FIRE_DIRECT_CONE_DEG = 18.0
+FRONT_CONE_DEG = 45.0
+FIRE_CONE_DEG = 12.0
+FIRE_CONE_CLOSE_DEG = 18.0
+FIRE_CONE_PANIC_DEG = 8.0
+FIRE_CLOSE_SURFACE = 420.0
+FIRE_HAZARD_BLOCK = 0.88
+FIRE_EDGE_BLOCK = 0.82
+SEARCH_MIN_TURN = 85.0
 
 
 def _clamp(x: float, lo: float, hi: float) -> float:
@@ -137,8 +126,6 @@ class Controller:
         self.prev_thrust = 0.0
         self.prev_error = 0.0
         self.search_dir = 1.0
-        self.lock_aim_bearing: Optional[float] = None
-        self.lock_misses = 0
         self.debug_last: Dict[str, Any] = {}
 
     @property
@@ -224,9 +211,16 @@ class Controller:
         return float(_get(ship_state, "respawn_time_left", 0.0) or 0.0) > 0.0
 
     def _can_fire(self, ship_state: Any) -> bool:
-        # Let the game engine handle weapon cooldown.
-        # The controller should request fire whenever the shot is geometrically valid.
-        return not self._is_respawning(ship_state)
+        if self._is_respawning(ship_state):
+            return False
+        cooldown = _get(ship_state, "fire_cooldown", None)
+        if cooldown is not None:
+            try:
+                if float(cooldown) > 0.0:
+                    return False
+            except Exception:
+                pass
+        return True
 
     def _asteroid_info(self, state: Dict[str, Any], ast: Any) -> Optional[Dict[str, float]]:
         pos = _get(ast, "position", None)
@@ -237,24 +231,11 @@ class Controller:
         ax, ay = float(pos[0]), float(pos[1])
         avx, avy = float(vel[0]), float(vel[1])
 
-        # Direct delta is what the ship can visually shoot at without firing over a map edge.
-        direct_dx = ax - state["x"]
-        direct_dy = ay - state["y"]
-
-        # Toric delta is still useful for collision avoidance because map physics wrap.
         dx, dy = _toric_delta(ax, ay, state["x"], state["y"], state["map_w"], state["map_h"])
-
-        wrap_used = (
-            abs(dx - direct_dx) > WRAP_EPSILON
-            or abs(dy - direct_dy) > WRAP_EPSILON
-        )
-
         dist = max(1e-6, math.hypot(dx, dy))
-        direct_dist = max(1e-6, math.hypot(direct_dx, direct_dy))
 
         radius = _asteroid_radius(ast)
         surface = dist - radius - SHIP_RADIUS
-        direct_surface = direct_dist - radius - SHIP_RADIUS
 
         rvx = avx - state["vx"]
         rvy = avy - state["vy"]
@@ -277,13 +258,8 @@ class Controller:
             "ast": ast,
             "dx": dx,
             "dy": dy,
-            "direct_dx": direct_dx,
-            "direct_dy": direct_dy,
             "dist": dist,
-            "direct_dist": direct_dist,
             "surface": surface,
-            "direct_surface": direct_surface,
-            "wrap_used": wrap_used,
             "radius": radius,
             "avx": avx,
             "avy": avy,
@@ -294,7 +270,6 @@ class Controller:
             "closest": closest,
             "ttc": ttc,
             "bearing": _bearing(dx, dy),
-            "direct_bearing": _bearing(direct_dx, direct_dy),
         }
 
     def _most_dangerous_asteroid(self, state: Dict[str, Any]) -> Optional[Dict[str, float]]:
@@ -327,11 +302,7 @@ class Controller:
         return best
 
     def _intercept_bearing(self, state: Dict[str, Any], info: Dict[str, float]) -> Tuple[float, float]:
-        # For shooting, never aim through the toric map wrap.
-        # Use direct geometry only.
-        rx = info.get("direct_dx", info["dx"])
-        ry = info.get("direct_dy", info["dy"])
-
+        rx, ry = info["dx"], info["dy"]
         vx = info["avx"] - state["vx"]
         vy = info["avy"] - state["vy"]
 
@@ -356,8 +327,7 @@ class Controller:
                     t = min(roots)
 
         if t is None:
-            direct_dist = info.get("direct_dist", info["dist"])
-            t = _clamp(direct_dist / BULLET_SPEED, 0.0, 1.25)
+            t = _clamp(info["dist"] / BULLET_SPEED, 0.0, 1.25)
 
         t = _clamp(t, 0.0, 1.50)
 
@@ -367,37 +337,28 @@ class Controller:
         return _bearing(aim_x, aim_y), t
 
     def _select_target(self, state: Dict[str, Any]) -> Optional[Dict[str, float]]:
-        candidates = []
+        best = None
 
         for ast in state["asteroids"]:
             info = self._asteroid_info(state, ast)
             if info is None:
                 continue
 
-            if NO_WRAP_SHOOTING and info.get("wrap_used", False):
-                continue
-
             aim_bearing, t_hit = self._intercept_bearing(state, info)
             aim_error = abs(_angle_diff(aim_bearing, state["heading"]))
 
-            closeness = _clamp((700.0 - info["surface"]) / 700.0, 0.0, 1.0)
+            closeness = _clamp((650.0 - info["surface"]) / 650.0, 0.0, 1.0)
             threat = _clamp((AVOID_RADIUS - info["closest"]) / AVOID_RADIUS, 0.0, 1.0)
             aim_quality = 1.0 - min(1.0, aim_error / 180.0)
             size_quality = _clamp(info["radius"] / 45.0, 0.0, 1.0)
 
             score = (
-                2.00 * closeness
-                + 0.95 * threat
-                + 4.10 * aim_quality
-                + 0.35 * size_quality
-                - 0.45 * t_hit
+                1.70 * closeness
+                + 1.75 * threat
+                + 2.10 * aim_quality
+                + 0.25 * size_quality
+                - 0.20 * t_hit
             )
-
-            if self.lock_aim_bearing is not None:
-                lock_error = abs(_angle_diff(aim_bearing, self.lock_aim_bearing))
-
-                if lock_error <= TARGET_LOCK_CONE_DEG:
-                    score += TARGET_LOCK_BONUS * (1.0 - lock_error / TARGET_LOCK_CONE_DEG)
 
             candidate = dict(info)
             candidate["aim_bearing"] = aim_bearing
@@ -405,41 +366,8 @@ class Controller:
             candidate["aim_error"] = aim_error
             candidate["score"] = score
 
-            candidates.append(candidate)
-
-        if not candidates:
-            self.lock_misses += 1
-            if self.lock_misses > TARGET_LOCK_MAX_MISSES:
-                self.lock_aim_bearing = None
-            return None
-
-        best = max(candidates, key=lambda c: c["score"])
-
-        locked = None
-        if self.lock_aim_bearing is not None:
-            locked_candidates = [
-                c for c in candidates
-                if abs(_angle_diff(c["aim_bearing"], self.lock_aim_bearing)) <= TARGET_LOCK_CONE_DEG
-            ]
-
-            if locked_candidates:
-                locked = max(locked_candidates, key=lambda c: c["score"])
-
-        # Hysteresis: do not switch targets unless the new target is clearly better.
-        if locked is not None and best is not locked:
-            if best["score"] < locked["score"] + TARGET_SWITCH_SCORE_MARGIN:
-                best = locked
-
-        if self.lock_aim_bearing is not None:
-            lock_error = abs(_angle_diff(best["aim_bearing"], self.lock_aim_bearing))
-            if lock_error > TARGET_LOCK_FORGET_CONE_DEG and best["score"] < 4.0:
-                self.lock_misses += 1
-            else:
-                self.lock_misses = 0
-        else:
-            self.lock_misses = 0
-
-        self.lock_aim_bearing = best["aim_bearing"]
+            if best is None or score > best["score"]:
+                best = candidate
 
         return best
 
@@ -556,7 +484,7 @@ class Controller:
                 score -= EDGE_WEIGHT * (EDGE_MARGIN - edge_clearance) / EDGE_MARGIN
 
         if target is not None:
-            score += 3.50 * (1.0 - abs(_angle_diff(target["aim_bearing"], heading)) / 180.0)
+            score += 1.20 * (1.0 - abs(_angle_diff(target["aim_bearing"], heading)) / 180.0)
 
         if hazard is not None:
             away = _bearing(-hazard["dx"], -hazard["dy"])
@@ -581,31 +509,17 @@ class Controller:
                 best_heading = h
                 best_score = score
 
-        # Hard safety still wins.
         if edge["danger"] >= 0.80:
             return best_heading, "edge_escape"
 
-        if hazard is not None and hazard["danger"] >= 0.62:
+        if hazard is not None and hazard["danger"] >= 0.45:
             return best_heading, "asteroid_evade"
 
-        # Strong target lock when not in hard danger.
         if target is not None:
-            aim_error = abs(_angle_diff(target["aim_bearing"], state["heading"]))
-
-            mild_hazard = hazard is not None and hazard["danger"] >= 0.50
-            mild_edge = edge["danger"] >= 0.55
-
-            # If moderate danger exists, use scored compromise heading.
-            if mild_hazard or mild_edge:
-                if aim_error <= FRONT_CONE_DEG:
-                    return best_heading, "attack"
+            front_error = abs(_angle_diff(target["aim_bearing"], state["heading"]))
+            if front_error > FRONT_CONE_DEG:
                 return best_heading, "search_to_target"
-
-            # If safe, directly pursue intercept bearing instead of over-balancing avoidance.
-            if aim_error <= FRONT_CONE_DEG:
-                return target["aim_bearing"], "attack"
-
-            return target["aim_bearing"], "search_to_target"
+            return best_heading, "attack"
 
         return (state["heading"] + self.search_dir * 90.0) % 360.0, "scan"
 
@@ -643,20 +557,17 @@ class Controller:
         elif mode == "search_to_target":
             thrust = SEARCH_THRUST
 
-            if abs(error) < 95.0:
-                thrust = max(thrust, 210.0)
-
             if abs(turn) < SEARCH_MIN_TURN:
                 sign = 1.0 if error >= 0.0 else -1.0
                 turn = sign * SEARCH_MIN_TURN
 
         elif mode == "attack":
-            if abs_error < 15.0:
+            if abs_error < 12.0:
                 thrust = CRUISE_THRUST
-            elif abs_error < 55.0:
-                thrust = 210.0
+            elif abs_error < 45.0:
+                thrust = 155.0
             else:
-                thrust = 110.0
+                thrust = 70.0
 
         else:
             thrust = SEARCH_THRUST
@@ -675,65 +586,37 @@ class Controller:
         return self.prev_thrust, self.prev_turn
 
     def _fire_decision(self, state: Dict[str, Any], target, hazard, edge) -> bool:
+        if target is None:
+            return False
+
         if not self._can_fire(state["ship_state"]):
             return False
 
-        # Primary rule: shoot the locked/selected target.
-        if target is not None:
-            target_intercept_error = abs(_angle_diff(target["aim_bearing"], state["heading"]))
-            target_direct_error = abs(_angle_diff(target.get("direct_bearing", target["bearing"]), state["heading"]))
+        # Only suppress fire in true emergency states.
+        # Do not stop shooting just because risk is moderate.
+        if edge["danger"] > FIRE_EDGE_BLOCK:
+            return False
 
-            if target["surface"] < FIRE_CLOSE_SURFACE:
-                if target_intercept_error <= FIRE_CONE_CLOSE_DEG:
-                    return True
-                if target_direct_error <= FIRE_DIRECT_CONE_DEG:
-                    return True
+        if hazard is not None and hazard["danger"] > FIRE_HAZARD_BLOCK:
+            return False
 
-            if target_intercept_error <= FIRE_CONE_DEG:
-                return True
+        aim_error = abs(_angle_diff(target["aim_bearing"], state["heading"]))
 
-            if target_direct_error <= FIRE_DIRECT_CONE_DEG:
-                return True
+        # Dynamic fire cone:
+        # tight when unsafe, wide when close/safe.
+        fire_cone = FIRE_CONE_DEG
 
-            # Stay focused. Only opportunistically fire away from the selected target
-            # if another asteroid is almost exactly in the barrel.
-            opportunistic_cone = FIRE_OPPORTUNISTIC_CONE_DEG
-        else:
-            opportunistic_cone = FIRE_INTERCEPT_CONE_DEG
+        if target["surface"] < FIRE_CLOSE_SURFACE:
+            fire_cone = FIRE_CONE_CLOSE_DEG
 
-        best_intercept_error = 999.0
-        best_direct_error = 999.0
+        if hazard is not None and hazard["danger"] > 0.65:
+            fire_cone = FIRE_CONE_PANIC_DEG
 
-        for ast in state["asteroids"]:
-            info = self._asteroid_info(state, ast)
-            if info is None:
-                continue
+        if edge["danger"] > 0.55:
+            fire_cone = FIRE_CONE_PANIC_DEG
 
-            if NO_WRAP_SHOOTING and info.get("wrap_used", False):
-                continue
-
-            if info["direct_surface"] > FIRE_MAX_SURFACE:
-                continue
-
-            direct_error = abs(_angle_diff(info.get("direct_bearing", info["bearing"]), state["heading"]))
-            aim_bearing, _ = self._intercept_bearing(state, info)
-            intercept_error = abs(_angle_diff(aim_bearing, state["heading"]))
-
-            best_direct_error = min(best_direct_error, direct_error)
-            best_intercept_error = min(best_intercept_error, intercept_error)
-
-        if best_intercept_error <= opportunistic_cone:
-            return True
-
-        if best_direct_error <= opportunistic_cone:
-            return True
-
-        return False
+        return aim_error <= fire_cone
 
     def explain(self) -> Dict[str, Any]:
         return dict(self.debug_last)
-
-
-
-
 

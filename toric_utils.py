@@ -79,7 +79,7 @@ def toric_bearing(from_pos: Vec2, to_pos: Vec2, map_size: Vec2) -> float:
     when the ship is already facing the target.
     """
     dx, dy = toric_delta(to_pos, from_pos, map_size)
-    return math.degrees(math.atan2(-dy, dx)) % 360
+    return math.degrees(math.atan2(dy, dx)) % 360  # +dy: Kessler facing=(cos,+sin)
 
 
 # ---------------------------------------------------------------------------

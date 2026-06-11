@@ -57,9 +57,7 @@ FIRE_CONE_PANIC_DEG = 22.0
 FIRE_CLOSE_SURFACE = 620.0
 FIRE_HAZARD_BLOCK = 999.0
 FIRE_EDGE_BLOCK = 999.0
-SEARCH_MIN_TURN = 115.0
-WRAP_EPSILON = 1.0
-NO_WRAP_SHOOTING = True
+SEARCH_MIN_TURN = 115.0
 FIRE_OPPORTUNISTIC_CONE_DEG = 9.0
 TARGET_LOCK_MAX_MISSES = 18
 TARGET_SWITCH_SCORE_MARGIN = 1.15
@@ -237,24 +235,11 @@ class Controller:
         ax, ay = float(pos[0]), float(pos[1])
         avx, avy = float(vel[0]), float(vel[1])
 
-        # Direct delta is what the ship can visually shoot at without firing over a map edge.
-        direct_dx = ax - state["x"]
-        direct_dy = ay - state["y"]
-
-        # Toric delta is still useful for collision avoidance because map physics wrap.
         dx, dy = _toric_delta(ax, ay, state["x"], state["y"], state["map_w"], state["map_h"])
-
-        wrap_used = (
-            abs(dx - direct_dx) > WRAP_EPSILON
-            or abs(dy - direct_dy) > WRAP_EPSILON
-        )
-
         dist = max(1e-6, math.hypot(dx, dy))
-        direct_dist = max(1e-6, math.hypot(direct_dx, direct_dy))
 
         radius = _asteroid_radius(ast)
         surface = dist - radius - SHIP_RADIUS
-        direct_surface = direct_dist - radius - SHIP_RADIUS
 
         rvx = avx - state["vx"]
         rvy = avy - state["vy"]
@@ -277,13 +262,8 @@ class Controller:
             "ast": ast,
             "dx": dx,
             "dy": dy,
-            "direct_dx": direct_dx,
-            "direct_dy": direct_dy,
             "dist": dist,
-            "direct_dist": direct_dist,
             "surface": surface,
-            "direct_surface": direct_surface,
-            "wrap_used": wrap_used,
             "radius": radius,
             "avx": avx,
             "avy": avy,
@@ -294,7 +274,6 @@ class Controller:
             "closest": closest,
             "ttc": ttc,
             "bearing": _bearing(dx, dy),
-            "direct_bearing": _bearing(direct_dx, direct_dy),
         }
 
     def _most_dangerous_asteroid(self, state: Dict[str, Any]) -> Optional[Dict[str, float]]:
@@ -327,11 +306,7 @@ class Controller:
         return best
 
     def _intercept_bearing(self, state: Dict[str, Any], info: Dict[str, float]) -> Tuple[float, float]:
-        # For shooting, never aim through the toric map wrap.
-        # Use direct geometry only.
-        rx = info.get("direct_dx", info["dx"])
-        ry = info.get("direct_dy", info["dy"])
-
+        rx, ry = info["dx"], info["dy"]
         vx = info["avx"] - state["vx"]
         vy = info["avy"] - state["vy"]
 
@@ -356,8 +331,7 @@ class Controller:
                     t = min(roots)
 
         if t is None:
-            direct_dist = info.get("direct_dist", info["dist"])
-            t = _clamp(direct_dist / BULLET_SPEED, 0.0, 1.25)
+            t = _clamp(info["dist"] / BULLET_SPEED, 0.0, 1.25)
 
         t = _clamp(t, 0.0, 1.50)
 
@@ -372,9 +346,6 @@ class Controller:
         for ast in state["asteroids"]:
             info = self._asteroid_info(state, ast)
             if info is None:
-                continue
-
-            if NO_WRAP_SHOOTING and info.get("wrap_used", False):
                 continue
 
             aim_bearing, t_hit = self._intercept_bearing(state, info)
@@ -681,7 +652,7 @@ class Controller:
         # Primary rule: shoot the locked/selected target.
         if target is not None:
             target_intercept_error = abs(_angle_diff(target["aim_bearing"], state["heading"]))
-            target_direct_error = abs(_angle_diff(target.get("direct_bearing", target["bearing"]), state["heading"]))
+            target_direct_error = abs(_angle_diff(target["bearing"], state["heading"]))
 
             if target["surface"] < FIRE_CLOSE_SURFACE:
                 if target_intercept_error <= FIRE_CONE_CLOSE_DEG:
@@ -709,13 +680,10 @@ class Controller:
             if info is None:
                 continue
 
-            if NO_WRAP_SHOOTING and info.get("wrap_used", False):
+            if info["surface"] > FIRE_MAX_SURFACE:
                 continue
 
-            if info["direct_surface"] > FIRE_MAX_SURFACE:
-                continue
-
-            direct_error = abs(_angle_diff(info.get("direct_bearing", info["bearing"]), state["heading"]))
+            direct_error = abs(_angle_diff(info["bearing"], state["heading"]))
             aim_bearing, _ = self._intercept_bearing(state, info)
             intercept_error = abs(_angle_diff(aim_bearing, state["heading"]))
 
@@ -732,7 +700,6 @@ class Controller:
 
     def explain(self) -> Dict[str, Any]:
         return dict(self.debug_last)
-
 
 
 

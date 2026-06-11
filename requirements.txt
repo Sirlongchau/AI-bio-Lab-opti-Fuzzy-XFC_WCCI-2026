@@ -1,7 +1,6 @@
-KesslerGame
+# Required
+kesslergame>=2.4.0
 numpy
+# Optional: only used by the rare CasADi-MPC last-resort evasion path.
+# The controller runs fine without it (import is guarded).
 casadi
-matplotlib
-scikit-fuzzy
-scipy
-networkx

@@ -1,0 +1,115 @@
+﻿"""
+Fuzzy_MPC_Controller.py
+=======================
+Competition entry point. Kessler calls Controller.actions() each frame.
+Final safety guard prevents edge run-off after supervisor output.
+"""
+
+import math
+from supervisor import Supervisor
+
+
+THRUST_MIN = -480.0
+THRUST_MAX = 480.0
+TURN_MIN = -180.0
+TURN_MAX = 180.0
+
+EDGE_MARGIN = 220.0
+EDGE_CRITICAL = 120.0
+EDGE_LOOKAHEAD = 1.20
+EDGE_TURN_GAIN = 2.30
+EDGE_ESCAPE_THRUST = 460.0
+EDGE_BRAKE_THRUST = -420.0
+EDGE_MAX_SAFE_SPEED = 150.0
+
+
+def _clamp(x, lo, hi):
+    return max(lo, min(hi, x))
+
+
+def _get(obj, name, default=None):
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
+
+
+def _angle_diff(target, current):
+    return (target - current + 180.0) % 360.0 - 180.0
+
+
+class Controller:
+    def __init__(self):
+        self.supervisor = Supervisor()
+
+    def actions(self, ship_state, game_state):
+        thrust, turn_rate, fire, mine = self.supervisor.compute(ship_state, game_state)
+        thrust, turn_rate, fire = self._final_edge_guard(ship_state, game_state, thrust, turn_rate, fire)
+        return thrust, turn_rate, fire, mine
+
+    def _final_edge_guard(self, ship_state, game_state, thrust, turn_rate, fire):
+        map_size = _get(game_state, "map_size", None)
+        if map_size is None:
+            return thrust, turn_rate, fire
+
+        map_w, map_h = float(map_size[0]), float(map_size[1])
+
+        pos = _get(ship_state, "position", (map_w * 0.5, map_h * 0.5))
+        vel = _get(ship_state, "velocity", (0.0, 0.0))
+
+        x, y = float(pos[0]), float(pos[1])
+        vx, vy = float(vel[0]), float(vel[1])
+
+        fx = x + vx * EDGE_LOOKAHEAD
+        fy = y + vy * EDGE_LOOKAHEAD
+
+        left_d = min(x, fx)
+        right_d = map_w - max(x, fx)
+        bottom_d = min(y, fy)
+        top_d = map_h - max(y, fy)
+
+        edge_dist = min(left_d, right_d, bottom_d, top_d)
+
+        if edge_dist >= EDGE_MARGIN:
+            return thrust, turn_rate, fire
+
+        severity = _clamp((EDGE_MARGIN - edge_dist) / EDGE_MARGIN, 0.0, 1.0)
+        if edge_dist <= EDGE_CRITICAL:
+            severity = 1.0
+
+        center_x = map_w * 0.5
+        center_y = map_h * 0.5
+
+        desired_heading = math.degrees(math.atan2(center_y - y, center_x - x))
+        heading = float(_get(ship_state, "heading", _get(ship_state, "angle", 0.0)))
+
+        err = _angle_diff(desired_heading, heading)
+
+        escape_turn = _clamp(EDGE_TURN_GAIN * err, TURN_MIN, TURN_MAX)
+
+        speed = math.hypot(vx, vy)
+        facing_center = abs(err) <= 55.0
+
+        if facing_center and speed < EDGE_MAX_SAFE_SPEED:
+            escape_thrust = EDGE_ESCAPE_THRUST
+        else:
+            escape_thrust = EDGE_BRAKE_THRUST
+
+        thrust = (1.0 - severity) * thrust + severity * escape_thrust
+        turn_rate = (1.0 - severity) * turn_rate + severity * escape_turn
+
+        thrust = _clamp(thrust, THRUST_MIN, THRUST_MAX)
+        turn_rate = _clamp(turn_rate, TURN_MIN, TURN_MAX)
+
+        if severity > 0.65:
+            fire = False
+
+        return thrust, turn_rate, fire
+
+    def explain(self):
+        """Return the active sub-controller's per-frame decision trace."""
+        fz = self.supervisor.controllers.get("fuzzy")
+        return fz.explain() if hasattr(fz, "explain") else {}
+
+    @property
+    def name(self) -> str:
+        return "fuzzy_mpc_hybrid_controller"

@@ -1,0 +1,25 @@
+"""
+Fuzzy_MPC_Controller.py
+=======================
+Competition entry point. Kessler calls Controller.actions() each frame; the
+Supervisor routes to the fuzzy controller (primary) or the CasADi MPC
+(rare last-resort evasion). All tuning lives in the fuzzy stack.
+"""
+from supervisor import Supervisor
+
+
+class Controller:
+    def __init__(self):
+        self.supervisor = Supervisor()
+
+    def actions(self, ship_state, game_state):
+        return self.supervisor.compute(ship_state, game_state)
+
+    def explain(self):
+        """Return the active sub-controller's per-frame decision trace (XAI)."""
+        fz = self.supervisor.controllers.get("fuzzy")
+        return fz.explain() if hasattr(fz, "explain") else {}
+
+    @property
+    def name(self) -> str:
+        return "fuzzy_mpc_hybrid_controller"
