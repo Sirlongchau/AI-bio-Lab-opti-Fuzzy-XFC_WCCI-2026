@@ -21,3 +21,7 @@ class Controller:
     @property
     def name(self) -> str:
         return "fuzzy_mpc_hybrid_controller"
+    
+    # @property
+    # def custom_sprite_path(self) -> str:
+    #     return "A400m_kessler" 

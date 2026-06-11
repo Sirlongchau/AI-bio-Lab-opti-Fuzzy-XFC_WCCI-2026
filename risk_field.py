@@ -240,13 +240,9 @@ class RiskField:
     alpha     : weight on max(R_i) in global aggregation [0, 1]
     """
 
-    def __init__(
-        self,
-        map_size: Tuple[float, float],
-        alpha: float = ALPHA_AGGREGATION,
-    ) -> None:
+    def __init__(self, map_size, alpha=None):
         self.map_size = map_size
-        self.alpha    = alpha
+        self.alpha = ALPHA_AGGREGATION if alpha is None else alpha  # lu à l'appel
 
     # ------------------------------------------------------------------
     # Frame-level API

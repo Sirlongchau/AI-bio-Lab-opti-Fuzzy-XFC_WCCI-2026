@@ -12,7 +12,7 @@ class Supervisor:
             "sacrifice": SacrificeController(),
         }
 
-        self.mode = "fuzzy"
+        self.mode = "target"
 
         self.MPCfail = 0
 
@@ -36,7 +36,7 @@ class Supervisor:
             self.mode = "mpc"
             return
 
-        if R_global <= self.R_lo or len(asteroids)>50:
+        if R_global <= self.R_lo :
             self.mode = "target"
             return
 
@@ -101,10 +101,10 @@ class Supervisor:
 
                     controller = self.controllers[self.mode]
 
-                    thrust, turn_rate, fire, drop_mine = controller.compute(
+                    thrust, turn_rate, fire = controller.compute(
                             ship_state, game_state, asteroid_risks
                         )
-                    command= tuple([thrust, turn_rate, fire, drop_mine])
+                    command= tuple([thrust, turn_rate, fire, False])
 
             else:
                 self.MPCfail = 0
