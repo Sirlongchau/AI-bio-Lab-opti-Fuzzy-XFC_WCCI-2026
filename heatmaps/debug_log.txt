@@ -1,0 +1,254 @@
+=== Controller Debug Log ===
+
+[Frame 30]
+  Mode          : hysteresis-previous mode
+  Reason        : R_global=0.855 in hysteresis band [0.8, 0.9]
+  R_global      : 0.8545
+  Asteroids     : 16
+  Top threat    : asteroid #9  risk=0.498  tau=3.15s  d=355px  bearing=220deg
+  Fire decision : fired — heading aligned with target
+  thrust=+0  turn_rate=+10
+
+[Frame 60]
+  Mode          : hysteresis-previous mode
+  Reason        : R_global=0.881 in hysteresis band [0.8, 0.9]
+  R_global      : 0.8813
+  Asteroids     : 19
+  Top threat    : asteroid #11  risk=0.543  tau=4.00s  d=471px  bearing=216deg
+  Fire decision : fired — heading aligned with target
+  thrust=+0  turn_rate=+8
+
+[Frame 90]
+  Mode          : hysteresis-previous mode
+  Reason        : R_global=0.872 in hysteresis band [0.8, 0.9]
+  R_global      : 0.8721
+  Asteroids     : 19
+  Top threat    : asteroid #12  risk=0.499  tau=5.15s  d=529px  bearing=136deg
+  Fire decision : held fire — not aligned or no target
+  thrust=+0  turn_rate=-180
+
+[Frame 120]
+  Mode          : hysteresis-previous mode
+  Reason        : R_global=0.868 in hysteresis band [0.8, 0.9]
+  R_global      : 0.8677
+  Asteroids     : 19
+  Top threat    : asteroid #13  risk=0.483  tau=6.10s  d=504px  bearing=320deg
+  Fire decision : held fire — not aligned or no target
+  thrust=+0  turn_rate=+3
+
+[Frame 150]
+  Mode          : hysteresis-previous mode
+  Reason        : R_global=0.886 in hysteresis band [0.8, 0.9]
+  R_global      : 0.8863
+  Asteroids     : 24
+  Top threat    : asteroid #13  risk=0.465  tau=7.06s  d=451px  bearing=308deg
+  Fire decision : held fire — not aligned or no target
+  thrust=+0  turn_rate=+14
+
+[Frame 180]
+  Mode          : MPC
+  Reason        : R_global=0.929 >= 0.9 (danger threshold)
+  R_global      : 0.9289
+  Asteroids     : 24
+  Top threat    : asteroid #4  risk=1.000  tau=0.65s  d=54px  bearing=357deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-480  turn_rate=-54
+
+[Frame 210]
+  Mode          : MPC
+  Reason        : R_global=0.949 >= 0.9 (danger threshold)
+  R_global      : 0.9490
+  Asteroids     : 24
+  Top threat    : asteroid #0  risk=1.000  tau=3.92s  d=194px  bearing=189deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-480  turn_rate=-100
+
+[Frame 240]
+  Mode          : MPC
+  Reason        : R_global=0.938 >= 0.9 (danger threshold)
+  R_global      : 0.9382
+  Asteroids     : 24
+  Top threat    : asteroid #0  risk=1.000  tau=0.91s  d=211px  bearing=105deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-480  turn_rate=+19
+
+[Frame 270]
+  Mode          : MPC
+  Reason        : R_global=0.918 >= 0.9 (danger threshold)
+  R_global      : 0.9180
+  Asteroids     : 24
+  Top threat    : asteroid #5  risk=0.944  tau=2.12s  d=271px  bearing=336deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-102  turn_rate=+116
+
+[Frame 300]
+  Mode          : MPC
+  Reason        : R_global=0.915 >= 0.9 (danger threshold)
+  R_global      : 0.9154
+  Asteroids     : 24
+  Top threat    : asteroid #2  risk=1.000  tau=1.86s  d=323px  bearing=89deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-480  turn_rate=-15
+
+[Frame 330]
+  Mode          : MPC
+  Reason        : R_global=0.931 >= 0.9 (danger threshold)
+  R_global      : 0.9309
+  Asteroids     : 24
+  Top threat    : asteroid #12  risk=1.000  tau=2.02s  d=150px  bearing=109deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-480  turn_rate=-1
+
+[Frame 360]
+  Mode          : MPC
+  Reason        : R_global=0.937 >= 0.9 (danger threshold)
+  R_global      : 0.9365
+  Asteroids     : 24
+  Top threat    : asteroid #2  risk=1.000  tau=1.40s  d=352px  bearing=350deg
+  Fire decision : held fire — not aligned or no target
+  thrust=+104  turn_rate=-79
+
+[Frame 390]
+  Mode          : MPC
+  Reason        : R_global=0.934 >= 0.9 (danger threshold)
+  R_global      : 0.9339
+  Asteroids     : 26
+  Top threat    : asteroid #8  risk=1.000  tau=1.86s  d=338px  bearing=63deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-478  turn_rate=-180
+
+[Frame 420]
+  Mode          : MPC
+  Reason        : R_global=0.966 >= 0.9 (danger threshold)
+  R_global      : 0.9662
+  Asteroids     : 38
+  Top threat    : asteroid #9  risk=1.000  tau=1.57s  d=531px  bearing=133deg
+  Fire decision : fired — heading aligned with target
+  thrust=-480  turn_rate=-44
+
+[Frame 450]
+  Mode          : MPC
+  Reason        : R_global=0.954 >= 0.9 (danger threshold)
+  R_global      : 0.9541
+  Asteroids     : 40
+  Top threat    : asteroid #12  risk=1.000  tau=1.21s  d=275px  bearing=189deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-80  turn_rate=-62
+
+[Frame 480]
+  Mode          : MPC
+  Reason        : R_global=0.965 >= 0.9 (danger threshold)
+  R_global      : 0.9647
+  Asteroids     : 45
+  Top threat    : asteroid #7  risk=1.000  tau=1.86s  d=494px  bearing=211deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-480  turn_rate=-55
+
+[Frame 510]
+  Mode          : MPC
+  Reason        : R_global=0.964 >= 0.9 (danger threshold)
+  R_global      : 0.9640
+  Asteroids     : 48
+  Top threat    : asteroid #9  risk=1.000  tau=1.31s  d=199px  bearing=269deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-480  turn_rate=+46
+
+[Frame 540]
+  Mode          : MPC
+  Reason        : R_global=0.973 >= 0.9 (danger threshold)
+  R_global      : 0.9726
+  Asteroids     : 47
+  Top threat    : asteroid #2  risk=1.000  tau=0.94s  d=177px  bearing=249deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-480  turn_rate=-18
+
+[Frame 570]
+  Mode          : MPC
+  Reason        : R_global=0.966 >= 0.9 (danger threshold)
+  R_global      : 0.9662
+  Asteroids     : 47
+  Top threat    : asteroid #13  risk=1.000  tau=1.81s  d=357px  bearing=171deg
+  Fire decision : held fire — not aligned or no target
+  thrust=+355  turn_rate=+165
+
+[Frame 600]
+  Mode          : MPC
+  Reason        : R_global=0.969 >= 0.9 (danger threshold)
+  R_global      : 0.9688
+  Asteroids     : 47
+  Top threat    : asteroid #1  risk=1.000  tau=0.85s  d=220px  bearing=202deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-480  turn_rate=-8
+
+[Frame 630]
+  Mode          : MPC
+  Reason        : R_global=0.971 >= 0.9 (danger threshold)
+  R_global      : 0.9714
+  Asteroids     : 47
+  Top threat    : asteroid #1  risk=1.000  tau=1.85s  d=482px  bearing=4deg
+  Fire decision : fired — heading aligned with target
+  thrust=-480  turn_rate=+22
+
+[Frame 660]
+  Mode          : MPC
+  Reason        : R_global=0.971 >= 0.9 (danger threshold)
+  R_global      : 0.9709
+  Asteroids     : 49
+  Top threat    : asteroid #0  risk=1.000  tau=1.51s  d=343px  bearing=222deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-480  turn_rate=-179
+
+[Frame 690]
+  Mode          : MPC
+  Reason        : R_global=0.961 >= 0.9 (danger threshold)
+  R_global      : 0.9607
+  Asteroids     : 55
+  Top threat    : asteroid #18  risk=1.000  tau=2.00s  d=384px  bearing=279deg
+  Fire decision : fired — heading aligned with target
+  thrust=-479  turn_rate=-178
+
+[Frame 720]
+  Mode          : MPC
+  Reason        : R_global=0.938 >= 0.9 (danger threshold)
+  R_global      : 0.9375
+  Asteroids     : 57
+  Top threat    : asteroid #28  risk=0.520  tau=4.80s  d=473px  bearing=152deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-478  turn_rate=+71
+
+[Frame 750]
+  Mode          : MPC
+  Reason        : R_global=0.974 >= 0.9 (danger threshold)
+  R_global      : 0.9741
+  Asteroids     : 61
+  Top threat    : asteroid #9  risk=1.000  tau=1.60s  d=498px  bearing=209deg
+  Fire decision : fired — heading aligned with target
+  thrust=-480  turn_rate=+140
+
+[Frame 780]
+  Mode          : MPC
+  Reason        : R_global=0.979 >= 0.9 (danger threshold)
+  R_global      : 0.9788
+  Asteroids     : 64
+  Top threat    : asteroid #1  risk=1.000  tau=1.61s  d=404px  bearing=152deg
+  Fire decision : fired — heading aligned with target
+  thrust=-480  turn_rate=-97
+
+[Frame 810]
+  Mode          : MPC
+  Reason        : R_global=0.979 >= 0.9 (danger threshold)
+  R_global      : 0.9790
+  Asteroids     : 65
+  Top threat    : asteroid #2  risk=1.000  tau=2.39s  d=184px  bearing=331deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-480  turn_rate=-35
+
+[Frame 840]
+  Mode          : MPC
+  Reason        : R_global=0.978 >= 0.9 (danger threshold)
+  R_global      : 0.9784
+  Asteroids     : 67
+  Top threat    : asteroid #7  risk=1.000  tau=1.79s  d=365px  bearing=196deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-480  turn_rate=+27
+
