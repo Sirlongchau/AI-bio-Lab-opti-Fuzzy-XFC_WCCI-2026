@@ -41,6 +41,7 @@ Usage
 from __future__ import annotations
 
 import math
+import numpy as np
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
@@ -101,14 +102,17 @@ class AngularProfile:
 
     def __init__(
         self,
-        bins: int = BINS,
-        rho_th: float = RHO_THRESHOLD,
-        min_width: float = MIN_CORRIDOR_WIDTH,
+        bins: int = None,
+        rho_th: float = None,
+        min_width: float = None,
     ) -> None:
-        self.bins      = bins
-        self.rho_th    = rho_th
-        self.min_width = min_width
-        self._bin_deg  = 360.0 / bins   # degrees per bin
+        self.bins      = BINS if bins is None else bins
+        self.rho_th    = RHO_THRESHOLD if rho_th is None else rho_th
+        self.min_width = MIN_CORRIDOR_WIDTH if min_width is None else min_width
+        self._bin_deg  = 360.0 / self.bins   # degrees per bin
+        self._bins_deg = np.arange(self.bins) * self._bin_deg
+        self._cos_bins = np.cos(np.radians(self._bins_deg))
+        self._sin_bins = np.sin(np.radians(self._bins_deg))
 
     # ------------------------------------------------------------------
     # Profile construction
@@ -129,7 +133,7 @@ class AngularProfile:
         -------
         profile : list of BINS floats in [0, 1]
         """
-        profile = [0.0] * self.bins
+        prof = np.zeros(self.bins)
 
         for ar in asteroid_risks:
             if ar.risk < 1e-4:
@@ -144,17 +148,12 @@ class AngularProfile:
             )
             sigma = min(sigma, 60.0)   # cap: don't let one asteroid block everything
 
-            # Gaussian projection onto the circle
-            bearing = ar.bearing   # degrees [0, 360)
-            intensity = ar.risk
+            # Vectorised Gaussian lobe over all bins (wrapped angular diff)
+            diff = (self._bins_deg - ar.bearing + 180.0) % 360.0 - 180.0
+            prof += ar.risk * np.exp(-(diff * diff) / (2.0 * sigma * sigma))
 
-            for b in range(self.bins):
-                b_deg = b * self._bin_deg
-                diff  = angular_diff(b_deg, bearing)   # in (-180, 180]
-                gauss = math.exp(-(diff * diff) / (2.0 * sigma * sigma))
-                profile[b] = min(1.0, profile[b] + intensity * gauss)
-
-        return profile
+        np.minimum(prof, 1.0, out=prof)
+        return prof.tolist()   # list: extract_corridors relies on `profile + profile`
 
     # ------------------------------------------------------------------
     # Corridor extraction
@@ -322,13 +321,9 @@ class AngularProfile:
         and needing a quick best-guess heading before the optimiser runs.
         """
         # Vector field: each bin repels with strength ρ(b)
-        fx, fy = 0.0, 0.0
-        for b, rho in enumerate(profile):
-            b_deg = b * self._bin_deg
-            b_rad = math.radians(b_deg)
-            # Repulsion: push away from high-danger directions
-            fx -= rho * math.cos(b_rad)
-            fy -= rho * math.sin(b_rad)
+        rho = np.asarray(profile, dtype=float)
+        fx = float(-np.dot(rho, self._cos_bins))
+        fy = float(-np.dot(rho, self._sin_bins))
 
         if math.hypot(fx, fy) < 1e-6:
             return 0.0   # uniform field, no preferred direction
