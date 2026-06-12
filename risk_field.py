@@ -275,16 +275,25 @@ class RiskField:
         for idx, ast in enumerate(asteroids):
             ast_pos = tuple(ast.position)
             ast_vel = tuple(ast.velocity)
-            radius  = ast.size
 
-            # --- Geometry ---
+            # In the kessler engine `.size` is the category (1..4) while the true
+            # collision radius is `.radius` (= size * 8, i.e. 8..32 px).
+            #   - size_cat feeds the FIS, whose membership functions are calibrated
+            #     on the category. Kept as-is so risk/tau values are unchanged
+            #     (no drift in the Supervisor's R_lo/R_hi thresholds).
+            #   - radius_px is stored on AsteroidRisk so downstream geometry
+            #     consumers (targeting, MPC collision radius) get real pixels.
+            size_cat  = ast.size
+            radius_px = ast.radius
+
+            # --- Geometry (FIS inputs frozen on size_cat, see note above) ---
             d_center  = toric_distance(ship_pos, ast_pos, self.map_size)
-            d_surface = max(d_center - radius, 0.0)
+            d_surface = max(d_center - size_cat, 0.0)
 
             tau = time_to_collision(
                 ship_pos, ship_vel,
                 ast_pos, ast_vel,
-                radius, self.map_size,
+                size_cat, self.map_size,
             )
 
             # Bearing from ship to asteroid (degrees)
@@ -292,13 +301,13 @@ class RiskField:
             bearing = toric_bearing(ship_pos, ast_pos, self.map_size)
 
             # --- FIS ---
-            risk = _fis_risk(tau, d_surface, radius)
+            risk = _fis_risk(tau, d_surface, size_cat)
 
             ar = AsteroidRisk(
                 asteroid_id=idx,
                 tau=tau,
                 d_surface=d_surface,
-                radius=radius,
+                radius=radius_px,        # true collision radius in px
                 bearing=bearing,
                 risk=risk,
                 position=ast_pos,
