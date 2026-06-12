@@ -95,8 +95,9 @@ def arena_risk_plot(
     # Pack asteroid arrays
     ast_pos = np.array([ar.position for ar in asteroid_risks], dtype=float)  # (N, 2)
     ast_vel = np.array([ar.velocity for ar in asteroid_risks], dtype=float)  # (N, 2)
-    ast_rad = np.array([ar.radius   for ar in asteroid_risks], dtype=float)  # (N,)
-    sv      = np.array(ship_vel, dtype=float)                                 # (2,)
+    ast_rad = np.array([ar.radius for ar in asteroid_risks], dtype=float)  # (N,) px
+    # NB: ship_vel is intentionally unused — this plot answers "if the ship were
+    # STANDING (v=0) at each cell", so closing depends only on asteroid motion.
 
     # Grid points expanded for broadcasting: (res, res, 1, 2)
     grid = np.stack([XX, YY], axis=-1)[:, :, np.newaxis, :]
@@ -109,11 +110,15 @@ def arena_risk_plot(
     dist = np.linalg.norm(rel, axis=-1)                   # (res, res, N)
     d_surface = np.maximum(dist - ast_rad, 0.0)           # (res, res, N)
 
-    # TTC: closing speed of each asteroid toward each grid point
+    # Closing speed = the asteroid's velocity projected onto the
+    # asteroid -> grid-cell direction. A standing ship at a cell is in danger
+    # when the asteroid heads TOWARD that cell, so the risk plume extends along
+    # each asteroid's velocity. `rel` points cell -> asteroid, so `-rel` points
+    # asteroid -> cell.
     eps  = 1e-6
-    unit = rel / (dist[..., np.newaxis] + eps)            # (res, res, N, 2)
-    rel_vel = ast_vel[np.newaxis, np.newaxis, :, :] - sv  # (1, 1, N, 2)
-    closing = np.sum(unit * rel_vel, axis=-1)             # (res, res, N)
+    unit_to_cell = -rel / (dist[..., np.newaxis] + eps)   # asteroid -> cell (res,res,N,2)
+    av = ast_vel[np.newaxis, np.newaxis, :, :]            # (1, 1, N, 2)
+    closing = np.sum(unit_to_cell * av, axis=-1)          # (res, res, N)
     ttc = np.where(closing > eps, d_surface / (closing + eps), np.inf)
 
     # Vectorised FIS approximation (matches vectorized_risk.py)
@@ -350,57 +355,82 @@ def debug_snapshot(
 # End-of-game heatmap replay
 # ---------------------------------------------------------------------------
 
-def replay_heatmaps(snapshots: list, display_seconds: float = 3.0) -> None:
+def _activate_gui_backend() -> bool:
+    """Try to switch matplotlib to an interactive backend. True on success."""
+    for backend in ("TkAgg", "QtAgg", "Qt5Agg", "WxAgg", "MacOSX"):
+        try:
+            plt.switch_backend(backend)
+            return True
+        except Exception:
+            continue
+    return False
+
+
+def _build_arena_fig(snap: dict):
+    """Rebuild the arena risk figure for one snapshot (current backend)."""
+    class _Ast:
+        __slots__ = ("position", "velocity", "size", "radius")
+        def __init__(self, p, v, s):
+            self.position = p; self.velocity = v
+            self.size = s; self.radius = s * 8.0   # engine: radius = size * 8
+
+    asteroids = [_Ast(p, v, s) for p, v, s in snap["ast_data"]]
+    rf    = RiskField(map_size=snap["map_size"])
+    risks = rf.compute_all(snap["ship_pos"], snap["ship_vel"], asteroids)
+    fig = arena_risk_plot(
+        snap["ship_pos"], snap["ship_vel"], risks, snap["map_size"],
+        title=f"Arena Risk  —  Frame {snap['frame']}",
+    )
+    if snap.get("explain_data"):
+        _apply_explain_overlay(fig, snap["explain_data"], snap["frame"])
+    return fig
+
+
+def replay_heatmaps(snapshots: list, display_seconds: float = 2.0,
+                    interactive: bool = True) -> None:
     """
-    Render collected per-frame snapshots and display as a timed slideshow.
+    Render the collected per-frame snapshots.
 
     Each snapshot dict must contain:
         frame, ship_pos, ship_vel, ship_heading,
         ast_data (list of (pos, vel, size) tuples), map_size, explain_data.
 
-    Tries to switch to an interactive backend so figures are visible.
+    interactive=True : switch to a GUI backend (if one is available) and play a
+                       timed slideshow. Falls back to saving PNGs when no GUI
+                       backend can be activated.
+    interactive=False: headless — write one PNG per snapshot under heatmaps/.
+
+    Must be called while the interpreter is alive (e.g. right after game.run()),
+    NOT from an atexit hook, since interactive display needs a live event loop.
     """
     if not snapshots:
         return
 
-    print(f"[debug_tools] Replaying {len(snapshots)} snapshots "
-          f"({display_seconds:.0f}s each)...")
+    use_gui = interactive and _activate_gui_backend()
+    mode = "slideshow" if use_gui else "PNG export"
+    print(f"[debug_tools] Replaying {len(snapshots)} snapshots ({mode})...")
 
-    class _Ast:
-        __slots__ = ("position", "velocity", "size")
-        def __init__(self, p, v, s):
-            self.position = p; self.velocity = v; self.size = s
-
-    # Switch away from the file-only Agg backend so plt.show() works
-    for _backend in ("TkAgg", "Qt5Agg", "WxAgg"):
-        try:
-            plt.switch_backend(_backend)
-            break
-        except Exception:
-            continue
+    if not use_gui:
+        os.makedirs(HEATMAP_DIR, exist_ok=True)
 
     for snap in snapshots:
         try:
-            asteroids = [_Ast(p, v, s) for p, v, s in snap["ast_data"]]
-            rf    = RiskField(map_size=snap["map_size"])
-            risks = rf.compute_all(snap["ship_pos"], snap["ship_vel"], asteroids)
-
-            fig = arena_risk_plot(
-                snap["ship_pos"], snap["ship_vel"], risks, snap["map_size"],
-                title=f"Arena Risk  —  Frame {snap['frame']}",
-            )
-
-            if snap.get("explain_data"):
-                _apply_explain_overlay(fig, snap["explain_data"], snap["frame"])
-
-            plt.show(block=False)
-            plt.pause(display_seconds)
-            plt.close("all")
+            fig = _build_arena_fig(snap)
+            if use_gui:
+                plt.show(block=False)
+                plt.pause(display_seconds)
+            else:
+                path = os.path.join(HEATMAP_DIR, f"replay_{snap['frame']:05d}.png")
+                fig.savefig(path, dpi=110, bbox_inches="tight")
+            plt.close(fig)
         except Exception as exc:
             print(f"[debug_tools] Replay frame {snap.get('frame')} failed: {exc}")
             plt.close("all")
 
-    print("[debug_tools] Replay complete.")
+    if use_gui:
+        print("[debug_tools] Replay complete.")
+    else:
+        print(f"[debug_tools] Frames written to {HEATMAP_DIR}/replay_*.png")
 
 
 # ---------------------------------------------------------------------------
@@ -414,7 +444,10 @@ if __name__ == "__main__":
     class FakeAsteroid:
         position: tuple
         velocity: tuple
-        size: float
+        radius: float                       # px (demo values are pixel radii)
+        @property
+        def size(self):                     # engine category = radius / 8
+            return max(1, round(self.radius / 8.0))
 
     MAP_SIZE   = (1000, 800)
     SHIP_POS   = (400.0, 400.0)
