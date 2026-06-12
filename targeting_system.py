@@ -64,13 +64,18 @@ MAX_DIST_FIRE = 700.0       # px — direct (un-wrapped) range cap
 HIT_FRACTION  = 0.85        # aim within this fraction of the radius
 
 # --- Target scoring -----------------------------------------------------------
-# Risk is primary; small/close are mild tie-breakers. STICK_DEG is the key knob:
-# it sets how strongly we prefer targets near the current heading, i.e. how hard
-# the turret commits to its current bearing / splitting cluster.
+# Risk is primary; small/close are mild tie-breakers. Bearing is a BONUS, not a
+# multiplier that crushes off-bearing risk, so a splitting cluster is favoured
+# yet a clearly higher-risk asteroid elsewhere can still steal the lock:
+#     score = risk * (1 + W_SMALL*small + W_CLOSE*close) * (1 + STICK_GAIN*stick)
+#     stick = exp(-|dtheta| / STICK_DEG)   in [0, 1]
+# STICK_GAIN = 0 ignores bearing (pure risk priority); large STICK_GAIN glues
+# the turret to its cluster. STICK_DEG sets how wide the "near heading" lobe is.
 MAX_RADIUS_PX = 32.0        # size-4 asteroid (radius = size*8)
 W_SMALL       = 0.30
 W_CLOSE       = 0.25
-STICK_DEG     = 50.0        # bearing stickiness (smaller = stickier on the cluster)
+STICK_DEG     = 50.0        # bearing-bonus falloff in degrees
+STICK_GAIN    = 1.0         # bearing-bonus weight (0 = none, high = very sticky)
 
 # --- Lock hysteresis (anti-dither) -------------------------------------------
 TRACK_TOL_PX = 28.0         # re-identify the locked asteroid within this radius (toric)
@@ -236,7 +241,7 @@ class TargetingController:
     def _score(self, ar, dist: float, ang_err: float) -> float:
         small = max(0.0, 1.0 - ar.radius / MAX_RADIUS_PX)
         close = 1.0 - min(dist, MAX_DIST_FIRE) / MAX_DIST_FIRE
-        stick = math.exp(-ang_err / STICK_DEG)         # commit to the current bearing
+        stick = 1.0 + STICK_GAIN * math.exp(-ang_err / STICK_DEG)   # bounded bearing bonus
         return ar.risk * (1.0 + W_SMALL * small + W_CLOSE * close) * stick
 
 

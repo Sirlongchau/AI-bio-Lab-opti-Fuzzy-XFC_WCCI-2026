@@ -2,253 +2,154 @@
 
 [Frame 30]
   Mode          : optimal Control
-  Reason        : R_global=0.368 <= 0.8 (safe — attack mode)
-  R_global      : 0.3677
-  Asteroids     : 16
-  Top threat    : asteroid #15  risk=0.223  tau=5.92s  d=420px  bearing=313deg
+  Reason        : R_global=0.734 <= 0.8 (safe — attack mode)
+  R_global      : 0.7345
+  Asteroids     : 24
+  Top threat    : asteroid #12  risk=0.235  tau=3.27s  d=299px  bearing=259deg
   Fire decision : held fire — not aligned or no target
-  thrust=+0  turn_rate=-13
+  thrust=+0  turn_rate=+10
 
 [Frame 60]
   Mode          : optimal Control
-  Reason        : R_global=0.361 <= 0.8 (safe — attack mode)
-  R_global      : 0.3605
-  Asteroids     : 18
-  Top threat    : asteroid #0  risk=0.228  tau=5.75s  d=266px  bearing=123deg
+  Reason        : R_global=0.761 <= 0.8 (safe — attack mode)
+  R_global      : 0.7605
+  Asteroids     : 31
+  Top threat    : asteroid #16  risk=0.232  tau=4.20s  d=376px  bearing=246deg
   Fire decision : held fire — not aligned or no target
-  thrust=+0  turn_rate=-12
+  thrust=+0  turn_rate=+180
 
 [Frame 90]
   Mode          : optimal Control
-  Reason        : R_global=0.338 <= 0.8 (safe — attack mode)
-  R_global      : 0.3383
-  Asteroids     : 12
-  Top threat    : asteroid #0  risk=0.233  tau=5.64s  d=318px  bearing=133deg
-  Fire decision : held fire — not aligned or no target
-  thrust=+0  turn_rate=-8
+  Reason        : R_global=0.733 <= 0.8 (safe — attack mode)
+  R_global      : 0.7327
+  Asteroids     : 30
+  Top threat    : asteroid #5  risk=0.196  tau=5.75s  d=460px  bearing=333deg
+  Fire decision : fired — heading aligned with target
+  thrust=+0  turn_rate=+9
 
 [Frame 120]
   Mode          : optimal Control
-  Reason        : R_global=0.404 <= 0.8 (safe — attack mode)
-  R_global      : 0.4044
-  Asteroids     : 18
-  Top threat    : asteroid #1  risk=0.302  tau=4.38s  d=208px  bearing=277deg
-  Fire decision : held fire — not aligned or no target
-  thrust=+0  turn_rate=-3
+  Reason        : R_global=0.771 <= 0.8 (safe — attack mode)
+  R_global      : 0.7712
+  Asteroids     : 44
+  Top threat    : asteroid #5  risk=0.183  tau=6.30s  d=519px  bearing=201deg
+  Fire decision : fired — heading aligned with target
+  thrust=+0  turn_rate=+12
 
 [Frame 150]
   Mode          : optimal Control
-  Reason        : R_global=0.398 <= 0.8 (safe — attack mode)
-  R_global      : 0.3975
-  Asteroids     : 15
-  Top threat    : asteroid #1  risk=0.310  tau=3.37s  d=275px  bearing=299deg
-  Fire decision : held fire — not aligned or no target
-  thrust=+0  turn_rate=-14
+  Reason        : R_global=0.735 <= 0.8 (safe — attack mode)
+  R_global      : 0.7355
+  Asteroids     : 40
+  Top threat    : asteroid #0  risk=0.173  tau=9.32s  d=543px  bearing=330deg
+  Fire decision : fired — heading aligned with target
+  thrust=+0  turn_rate=+20
 
 [Frame 180]
   Mode          : optimal Control
-  Reason        : R_global=0.468 <= 0.8 (safe — attack mode)
-  R_global      : 0.4684
-  Asteroids     : 31
-  Top threat    : asteroid #22  risk=0.312  tau=3.33s  d=380px  bearing=306deg
+  Reason        : R_global=0.705 <= 0.8 (safe — attack mode)
+  R_global      : 0.7047
+  Asteroids     : 36
+  Top threat    : asteroid #0  risk=0.173  tau=10.29s  d=516px  bearing=206deg
   Fire decision : held fire — not aligned or no target
-  thrust=+0  turn_rate=-1
+  thrust=+0  turn_rate=+20
 
 [Frame 210]
-  Mode          : optimal Control
-  Reason        : R_global=0.434 <= 0.8 (safe — attack mode)
-  R_global      : 0.4338
-  Asteroids     : 29
-  Top threat    : asteroid #16  risk=0.273  tau=4.47s  d=469px  bearing=318deg
+  Mode          : MPC
+  Reason        : R_global=0.929 >= 0.9 (danger threshold)
+  R_global      : 0.9289
+  Asteroids     : 31
+  Top threat    : asteroid #4  risk=1.000  tau=0.76s  d=172px  bearing=121deg
   Fire decision : held fire — not aligned or no target
-  thrust=+0  turn_rate=-0
+  thrust=-480  turn_rate=+180
 
 [Frame 240]
-  Mode          : optimal Control
-  Reason        : R_global=0.411 <= 0.8 (safe — attack mode)
-  R_global      : 0.4106
-  Asteroids     : 29
-  Top threat    : asteroid #17  risk=0.243  tau=5.32s  d=545px  bearing=330deg
+  Mode          : MPC
+  Reason        : R_global=0.908 >= 0.9 (danger threshold)
+  R_global      : 0.9075
+  Asteroids     : 31
+  Top threat    : asteroid #29  risk=0.975  tau=0.95s  d=244px  bearing=84deg
   Fire decision : held fire — not aligned or no target
-  thrust=+0  turn_rate=-3
+  thrust=-480  turn_rate=-13
 
 [Frame 270]
-  Mode          : optimal Control
-  Reason        : R_global=0.448 <= 0.8 (safe — attack mode)
-  R_global      : 0.4477
-  Asteroids     : 30
-  Top threat    : asteroid #1  risk=0.298  tau=2.70s  d=52px  bearing=295deg
+  Mode          : MPC
+  Reason        : R_global=0.905 >= 0.9 (danger threshold)
+  R_global      : 0.9053
+  Asteroids     : 31
+  Top threat    : asteroid #6  risk=1.000  tau=0.95s  d=293px  bearing=4deg
   Fire decision : held fire — not aligned or no target
-  thrust=+0  turn_rate=+180
+  thrust=-480  turn_rate=+73
 
 [Frame 300]
   Mode          : optimal Control
-  Reason        : R_global=0.758 <= 0.8 (safe — attack mode)
-  R_global      : 0.7575
-  Asteroids     : 28
-  Top threat    : asteroid #11  risk=0.732  tau=1.73s  d=139px  bearing=65deg
-  Fire decision : fired — heading aligned with target
-  thrust=+0  turn_rate=+3
+  Reason        : R_global=0.723 <= 0.8 (safe — attack mode)
+  R_global      : 0.7235
+  Asteroids     : 34
+  Top threat    : asteroid #6  risk=0.236  tau=4.01s  d=399px  bearing=179deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-480  turn_rate=+79
 
 [Frame 330]
-  Mode          : optimal Control
-  Reason        : R_global=0.457 <= 0.8 (safe — attack mode)
-  R_global      : 0.4575
-  Asteroids     : 42
-  Top threat    : asteroid #11  risk=0.326  tau=2.45s  d=227px  bearing=50deg
-  Fire decision : fired — heading aligned with target
-  thrust=+0  turn_rate=+3
+  Mode          : hysteresis-previous mode
+  Reason        : R_global=0.814 in hysteresis band [0.8, 0.9]
+  R_global      : 0.8142
+  Asteroids     : 38
+  Top threat    : asteroid #34  risk=0.286  tau=2.70s  d=253px  bearing=225deg
+  Fire decision : held fire — not aligned or no target
+  thrust=-177  turn_rate=-92
 
 [Frame 360]
   Mode          : optimal Control
-  Reason        : R_global=0.437 <= 0.8 (safe — attack mode)
-  R_global      : 0.4374
-  Asteroids     : 46
-  Top threat    : asteroid #12  risk=0.312  tau=3.16s  d=308px  bearing=44deg
+  Reason        : R_global=0.739 <= 0.8 (safe — attack mode)
+  R_global      : 0.7391
+  Asteroids     : 38
+  Top threat    : asteroid #0  risk=0.255  tau=3.19s  d=511px  bearing=37deg
   Fire decision : held fire — not aligned or no target
-  thrust=+480  turn_rate=-180
+  thrust=+480  turn_rate=+106
 
 [Frame 390]
   Mode          : optimal Control
-  Reason        : R_global=0.785 <= 0.8 (safe — attack mode)
-  R_global      : 0.7848
-  Asteroids     : 42
-  Top threat    : asteroid #21  risk=0.732  tau=1.48s  d=167px  bearing=220deg
+  Reason        : R_global=0.776 <= 0.8 (safe — attack mode)
+  R_global      : 0.7761
+  Asteroids     : 38
+  Top threat    : asteroid #2  risk=0.279  tau=1.67s  d=415px  bearing=319deg
   Fire decision : held fire — not aligned or no target
-  thrust=+480  turn_rate=+1
+  thrust=+0  turn_rate=-94
 
 [Frame 420]
   Mode          : optimal Control
-  Reason        : R_global=0.498 <= 0.8 (safe — attack mode)
-  R_global      : 0.4985
-  Asteroids     : 42
-  Top threat    : asteroid #0  risk=0.326  tau=1.96s  d=546px  bearing=146deg
+  Reason        : R_global=0.793 <= 0.8 (safe — attack mode)
+  R_global      : 0.7932
+  Asteroids     : 52
+  Top threat    : asteroid #2  risk=0.249  tau=3.44s  d=574px  bearing=216deg
   Fire decision : held fire — not aligned or no target
-  thrust=+480  turn_rate=+1
+  thrust=+0  turn_rate=+18
 
 [Frame 450]
   Mode          : optimal Control
-  Reason        : R_global=0.499 <= 0.8 (safe — attack mode)
-  R_global      : 0.4990
-  Asteroids     : 42
-  Top threat    : asteroid #0  risk=0.326  tau=2.76s  d=415px  bearing=56deg
+  Reason        : R_global=0.792 <= 0.8 (safe — attack mode)
+  R_global      : 0.7923
+  Asteroids     : 51
+  Top threat    : asteroid #39  risk=0.222  tau=4.61s  d=144px  bearing=140deg
   Fire decision : held fire — not aligned or no target
-  thrust=+0  turn_rate=+180
+  thrust=+0  turn_rate=+20
 
 [Frame 480]
   Mode          : optimal Control
-  Reason        : R_global=0.479 <= 0.8 (safe — attack mode)
-  R_global      : 0.4789
-  Asteroids     : 41
-  Top threat    : asteroid #3  risk=0.326  tau=2.44s  d=392px  bearing=248deg
+  Reason        : R_global=0.780 <= 0.8 (safe — attack mode)
+  R_global      : 0.7799
+  Asteroids     : 45
+  Top threat    : asteroid #37  risk=0.233  tau=4.16s  d=166px  bearing=121deg
   Fire decision : held fire — not aligned or no target
-  thrust=+0  turn_rate=+1
+  thrust=+0  turn_rate=+9
 
 [Frame 510]
   Mode          : optimal Control
-  Reason        : R_global=0.578 <= 0.8 (safe — attack mode)
-  R_global      : 0.5775
-  Asteroids     : 49
-  Top threat    : asteroid #7  risk=0.502  tau=4.96s  d=176px  bearing=221deg
-  Fire decision : held fire — not aligned or no target
-  thrust=+0  turn_rate=-3
-
-[Frame 540]
-  Mode          : optimal Control
-  Reason        : R_global=0.450 <= 0.8 (safe — attack mode)
-  R_global      : 0.4502
-  Asteroids     : 53
-  Top threat    : asteroid #16  risk=0.279  tau=3.76s  d=435px  bearing=300deg
+  Reason        : R_global=0.755 <= 0.8 (safe — attack mode)
+  R_global      : 0.7551
+  Asteroids     : 42
+  Top threat    : asteroid #39  risk=0.213  tau=5.00s  d=229px  bearing=123deg
   Fire decision : held fire — not aligned or no target
   thrust=+0  turn_rate=+5
-
-[Frame 570]
-  Mode          : optimal Control
-  Reason        : R_global=0.405 <= 0.8 (safe — attack mode)
-  R_global      : 0.4054
-  Asteroids     : 46
-  Top threat    : asteroid #24  risk=0.235  tau=6.65s  d=114px  bearing=103deg
-  Fire decision : held fire — not aligned or no target
-  thrust=+0  turn_rate=+4
-
-[Frame 600]
-  Mode          : optimal Control
-  Reason        : R_global=0.383 <= 0.8 (safe — attack mode)
-  R_global      : 0.3831
-  Asteroids     : 43
-  Top threat    : asteroid #0  risk=0.248  tau=5.19s  d=511px  bearing=210deg
-  Fire decision : held fire — not aligned or no target
-  thrust=+480  turn_rate=+180
-
-[Frame 630]
-  Mode          : optimal Control
-  Reason        : R_global=0.643 <= 0.8 (safe — attack mode)
-  R_global      : 0.6431
-  Asteroids     : 42
-  Top threat    : asteroid #32  risk=0.529  tau=2.82s  d=168px  bearing=268deg
-  Fire decision : held fire — not aligned or no target
-  thrust=+480  turn_rate=-51
-
-[Frame 660]
-  Mode          : optimal Control
-  Reason        : R_global=0.499 <= 0.8 (safe — attack mode)
-  R_global      : 0.4995
-  Asteroids     : 42
-  Top threat    : asteroid #31  risk=0.326  tau=2.02s  d=504px  bearing=228deg
-  Fire decision : held fire — not aligned or no target
-  thrust=+480  turn_rate=-50
-
-[Frame 690]
-  Mode          : optimal Control
-  Reason        : R_global=0.436 <= 0.8 (safe — attack mode)
-  R_global      : 0.4365
-  Asteroids     : 42
-  Top threat    : asteroid #30  risk=0.282  tau=3.70s  d=327px  bearing=340deg
-  Fire decision : held fire — not aligned or no target
-  thrust=+0  turn_rate=+180
-
-[Frame 720]
-  Mode          : optimal Control
-  Reason        : R_global=0.399 <= 0.8 (safe — attack mode)
-  R_global      : 0.3989
-  Asteroids     : 46
-  Top threat    : asteroid #30  risk=0.239  tau=4.48s  d=418px  bearing=334deg
-  Fire decision : fired — heading aligned with target
-  thrust=+0  turn_rate=-8
-
-[Frame 750]
-  Mode          : optimal Control
-  Reason        : R_global=0.360 <= 0.8 (safe — attack mode)
-  R_global      : 0.3603
-  Asteroids     : 49
-  Top threat    : asteroid #3  risk=0.201  tau=6.55s  d=285px  bearing=30deg
-  Fire decision : held fire — not aligned or no target
-  thrust=+0  turn_rate=+180
-
-[Frame 780]
-  Mode          : optimal Control
-  Reason        : R_global=0.490 <= 0.8 (safe — attack mode)
-  R_global      : 0.4904
-  Asteroids     : 44
-  Top threat    : asteroid #21  risk=0.396  tau=2.85s  d=130px  bearing=76deg
-  Fire decision : held fire — not aligned or no target
-  thrust=+0  turn_rate=+180
-
-[Frame 810]
-  Mode          : optimal Control
-  Reason        : R_global=0.769 <= 0.8 (safe — attack mode)
-  R_global      : 0.7694
-  Asteroids     : 56
-  Top threat    : asteroid #11  risk=0.732  tau=1.80s  d=130px  bearing=73deg
-  Fire decision : held fire — not aligned or no target
-  thrust=+0  turn_rate=+180
-
-[Frame 840]
-  Mode          : optimal Control
-  Reason        : R_global=0.742 <= 0.8 (safe — attack mode)
-  R_global      : 0.7417
-  Asteroids     : 54
-  Top threat    : asteroid #12  risk=0.696  tau=2.02s  d=177px  bearing=55deg
-  Fire decision : fired — heading aligned with target
-  thrust=+0  turn_rate=+4
 

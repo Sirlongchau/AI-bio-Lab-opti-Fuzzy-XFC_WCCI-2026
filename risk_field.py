@@ -81,6 +81,34 @@ OUT_HIGH       = 0.75
 OUT_MEDIUM     = 0.20
 OUT_LOW        = 0.15
 OUT_NEGLIGIBLE = 0.02
+FFS = 0.0
+FFM = 0.0
+FFL = 0.0
+FMS = 0.0
+FMM = 0.0
+FML = 0.0
+FNS = 0.0
+FNM = 0.0
+FNL = 0.0
+CMS = 0.0
+CMM = 0.0
+CML = 0.0
+CNS = 0.0
+CNM = 0.0
+CNL = 0.0
+CFS = 0.0
+CFM = 0.0
+CFL = 0.0
+MNS = 0.0
+MNM = 0.0
+MNL = 0.0
+MMS = 0.0
+MMM = 0.0
+MML = 0.0
+MFL = 0.0
+MFM = 0.0
+MFS = 0.0
+
 
 
 # ---------------------------------------------------------------------------
@@ -165,37 +193,37 @@ def _fis_risk(tau: float, d_surface: float, radius: float) -> float:
         (t["critical"], OUT_CRITICAL),  # truly imminent, any distance, any size
 
         # --- Close approach ---
-        (min(t["close"], d["near"], s["large"]),              OUT_CRITICAL),
-        (min(t["close"], d["near"], s["medium"]),             OUT_HIGH),
-        (min(t["close"], d["near"], s["small"]),             OUT_MEDIUM),
-        (min(t["close"], d["medium"], s["large"]),            OUT_HIGH),
-        (min(t["close"], d["medium"], s["medium"]),           OUT_HIGH),
-        (min(t["close"], d["medium"], s["small"]),           OUT_MEDIUM),
-        (min(t["close"], d["far"], s["large"]),             OUT_MEDIUM),
-        (min(t["close"], d["far"], s["medium"]),            OUT_MEDIUM),
-        (min(t["close"], d["far"], s["small"]),            OUT_LOW),
+        (min(t["close"], d["near"], s["large"]),              CNL),
+        (min(t["close"], d["near"], s["medium"]),             CNM),
+        (min(t["close"], d["near"], s["small"]),             CNS),
+        (min(t["close"], d["medium"], s["large"]),            CML),
+        (min(t["close"], d["medium"], s["medium"]),           CMM),
+        (min(t["close"], d["medium"], s["small"]),           CMS),
+        (min(t["close"], d["far"], s["large"]),             CFL),
+        (min(t["close"], d["far"], s["medium"]),            CFM),
+        (min(t["close"], d["far"], s["small"]),            CFS),
 
         # --- Medium term ---
-        (min(t["medium"], d["near"], s["large"]),              OUT_MEDIUM),
-        (min(t["medium"], d["near"], s["medium"]),             OUT_LOW),
-        (min(t["medium"], d["near"], s["small"]),             OUT_MEDIUM),
-        (min(t["medium"], d["medium"], s["large"]),            OUT_HIGH),
-        (min(t["medium"], d["medium"], s["medium"]),           OUT_HIGH),
-        (min(t["medium"], d["medium"], s["small"]),           OUT_MEDIUM),
-        (min(t["medium"], d["far"], s["large"]),             OUT_MEDIUM),
-        (min(t["medium"], d["far"], s["medium"]),            OUT_MEDIUM),
-        (min(t["medium"], d["far"], s["small"]),            OUT_LOW),
+        (min(t["medium"], d["near"], s["large"]),              MNL),
+        (min(t["medium"], d["near"], s["medium"]),             MNM),
+        (min(t["medium"], d["near"], s["small"]),             MNS),
+        (min(t["medium"], d["medium"], s["large"]),            MML),
+        (min(t["medium"], d["medium"], s["medium"]),           MMM),
+        (min(t["medium"], d["medium"], s["small"]),           MMS),
+        (min(t["medium"], d["far"], s["large"]),             MFL),
+        (min(t["medium"], d["far"], s["medium"]),            MFM),
+        (min(t["medium"], d["far"], s["small"]),            MFS),
 
         # --- Far / receding ---
-        (min(t["far"], d["near"], s["large"]),              OUT_LOW),
-        (min(t["far"], d["near"], s["medium"]),             OUT_LOW),
-        (min(t["far"], d["near"], s["small"]),             OUT_LOW),
-        (min(t["far"], d["medium"], s["large"]),            OUT_LOW),
-        (min(t["far"], d["medium"], s["medium"]),           OUT_LOW),
-        (min(t["far"], d["medium"], s["small"]),           OUT_NEGLIGIBLE),
-        (min(t["far"], d["far"], s["large"]),             OUT_LOW),
-        (min(t["far"], d["far"], s["medium"]),            OUT_NEGLIGIBLE),
-        (min(t["far"], d["far"], s["small"]),            OUT_NEGLIGIBLE),
+        (min(t["far"], d["near"], s["large"]),              FNL),
+        (min(t["far"], d["near"], s["medium"]),             FNM),
+        (min(t["far"], d["near"], s["small"]),             FNS),
+        (min(t["far"], d["medium"], s["large"]),            FML),
+        (min(t["far"], d["medium"], s["medium"]),           FMM),
+        (min(t["far"], d["medium"], s["small"]),           FMS),
+        (min(t["far"], d["far"], s["large"]),             FFL),
+        (min(t["far"], d["far"], s["medium"]),            FFM),
+        (min(t["far"], d["far"], s["small"]),            FFS),
     ]
 
     total_weight = sum(w for w, _ in rules)

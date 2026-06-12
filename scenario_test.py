@@ -6,10 +6,15 @@ Visualisation d'une partie avec les meilleurs paramètres GA.
 Usage : python run_scenario.py [--params best_params.json]
 """
 
+import os
 import time
 import json
 import argparse
 from pathlib import Path
+
+# Interactive run: enable the controller's debug/heatmap pipeline. Must be set
+# BEFORE importing the controller (the flag is read at import time).
+os.environ.setdefault("KESSLER_DEBUG", "1")
 
 # ── 1. Charger et appliquer les paramètres GA avant tout import contrôleur ──
 from ga_optimizer import GeneticOptimizer, Genome, apply_genome_to_modules
@@ -78,3 +83,8 @@ print(f'Asteroids hit:      {[team.asteroids_hit for team in score.teams]}')
 print(f'Deaths:             {[team.deaths for team in score.teams]}')
 print(f'Accuracy:           {[round(team.accuracy, 3) for team in score.teams]}')
 print(f'Mean eval time:     {[round(team.mean_eval_time * 1000, 2) for team in score.teams]} ms')
+
+# ── 6. Heatmap / explainability en fin de run ────────────────────────────────
+# Called here (not via atexit) so the interactive display has a live event loop.
+if hasattr(ctrl, "show_debug"):
+    ctrl.show_debug(display_seconds=2.0)
