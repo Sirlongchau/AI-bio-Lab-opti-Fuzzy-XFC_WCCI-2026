@@ -66,7 +66,7 @@ SP_EPS         =   2.0        # softplus sharpness
 # Solver budget
 MAX_SOLVER_MS              = 25.0
 IPOPT_MAX_ITER             = 50
-N_AST_MAX                  = 100       # computational cap (the turret keeps us under it)
+N_AST_MAX                  = 200       # computational cap (the turret keeps us under it)
 INFEASIBILITY_COST_CEILING = 2000.0   # cost above this => Supervisor treats it as "no escape"
 
 # Inactive asteroid slots are parked here so they contribute zero cost.

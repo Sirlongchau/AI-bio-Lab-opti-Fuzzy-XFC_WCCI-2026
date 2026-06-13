@@ -316,12 +316,12 @@ class RiskField:
 
             # --- Geometry (FIS inputs frozen on size_cat, see note above) ---
             d_center  = toric_distance(ship_pos, ast_pos, self.map_size)
-            d_surface = max(d_center - size_cat, 0.0)
+            d_surface = max(d_center - radius_px, 0.0)
 
             tau = time_to_collision(
                 ship_pos, ship_vel,
                 ast_pos, ast_vel,
-                size_cat, self.map_size,
+                radius_px, self.map_size,
             )
 
             # Bearing from ship to asteroid (degrees)
