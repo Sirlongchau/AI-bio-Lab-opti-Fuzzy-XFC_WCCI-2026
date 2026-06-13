@@ -3,12 +3,18 @@ import os
 import matplotlib
 matplotlib.use('Agg')  # file-only backend — must be set before any pyplot import
 
+# Debug (per-frame snapshots + end-of-run heatmap) is ON by default for
+# interactive runs, and OFF inside GA workers (which set KESSLER_DEBUG=0).
+# When OFF, no snapshots are collected, no log is written and no atexit hook is
+# registered — the controller runs at full speed with zero debug side effects.
+_DEBUG = os.environ.get("KESSLER_DEBUG", "1") == "1"
+
 from angular_profile import AngularProfile
 from debug_tools import debug_snapshot, replay_heatmaps
 
 from Casadi_mpc import MPCController
 from risk_field import RiskField
-from test_controller_fuzzy import FuzzyController
+#from test_controller_fuzzy import FuzzyController
 #from SacrificeController import SacrificeController
 from dataclasses import dataclass
 from supervisor import Supervisor
@@ -17,9 +23,9 @@ _HEATMAP_DIR = "heatmaps"
 
 class Controller:
     def __init__(self):
-        self.fuzzy = FuzzyController()
+        #self.fuzzy = FuzzyController()
         self.mpc = MPCController()
-        self.sacrifice = FuzzyController() # placeholder for actual SacrificeController()
+        #self.sacrifice = FuzzyController() # placeholder for actual SacrificeController()
         self.supervisor = Supervisor()
         #self.debug=debug() # placeholder for actual debug tools like FrameDebugger, RiskHeatmap, etc.
         self._debug_ap   = AngularProfile()
@@ -31,23 +37,28 @@ class Controller:
         self._decision_log   = []   # lightweight per-sample explainability record
         self._frame_snapshots = []  # raw game state per 30-frame tick — rendered at game end
 
-        # Fresh log file every game run
-        os.makedirs(_HEATMAP_DIR, exist_ok=True)
-        self._log_path = os.path.join(_HEATMAP_DIR, "debug_log.txt")
-        with open(self._log_path, "w", encoding="utf-8") as _f:
-            _f.write("=== Controller Debug Log ===\n\n")
-
-        atexit.register(self._finalize)
+        # Fresh log file every game run (debug builds only)
+        if _DEBUG:
+            os.makedirs(_HEATMAP_DIR, exist_ok=True)
+            self._log_path = os.path.join(_HEATMAP_DIR, "debug_log.txt")
+            with open(self._log_path, "w", encoding="utf-8") as _f:
+                _f.write("=== Controller Debug Log ===\n\n")
+            atexit.register(self._finalize)
+        else:
+            self._log_path = None
     
     def actions(self, ship_state, game_state):
         self._frame += 1
-        #self.debug.update(ship_state, game_state) # update debug tools with current state
-        output = self.supervisor.compute(ship_state, game_state) # get control output from supervisor
-        _R_LO=self.supervisor.R_lo
-        _R_HI=self.supervisor.R_hi
+        output = self.supervisor.compute(ship_state, game_state)  # control output
+
+        if not _DEBUG:
+            return output
+
         # Every 30 frames: record decision, collect snapshot data, append to log
         if self._frame % 30 == 0:
-            self._record_decision(ship_state, game_state, output[0], output[1], output[2],_R_HI,_R_LO)
+            _R_LO = self.supervisor.R_lo
+            _R_HI = self.supervisor.R_hi
+            self._record_decision(ship_state, game_state, output[0], output[1], output[2], _R_HI, _R_LO)
             self._collect_frame_data(ship_state, game_state)
             self._append_log_entry()
 
@@ -175,9 +186,48 @@ class Controller:
     # ------------------------------------------------------------------
 
     def _finalize(self):
-        self._print_explainability_summary()
-        self._save_final_heatmap()
-        replay_heatmaps(self._frame_snapshots)
+        """atexit hook: SAVE artifacts only. Interactive display happens in
+        show_debug() while the interpreter is still alive (a GUI event loop is
+        not available during interpreter shutdown)."""
+        if not _DEBUG:
+            return
+        try:
+            self._print_explainability_summary()
+        except Exception:
+            pass
+        try:
+            self._save_final_heatmap()
+        except Exception:
+            pass
+        try:
+            replay_heatmaps(self._frame_snapshots, interactive=False)  # -> PNGs
+        except Exception:
+            pass
+
+    def show_debug(self, display_seconds: float = 2.0):
+        """Render the end-of-run heatmaps to the screen.
+
+        Call this AFTER game.run() returns (interpreter still alive) for a
+        reliable interactive display; it switches to a GUI matplotlib backend
+        on demand. Falls back to saving PNGs if no GUI backend is available.
+        """
+        if not _DEBUG:
+            print("[debug_tools] KESSLER_DEBUG=0 — debug disabled, nothing to show.")
+            return
+        atexit.unregister(self._finalize)   # we render now; skip the shutdown save
+        try:
+            self._print_explainability_summary()
+        except Exception:
+            pass
+        try:
+            self._save_final_heatmap()
+        except Exception as e:
+            print(f"[debug_tools] Final heatmap failed: {e}")
+        try:
+            replay_heatmaps(self._frame_snapshots, interactive=True,
+                            display_seconds=display_seconds)
+        except Exception as e:
+            print(f"[debug_tools] Replay failed: {e}")
 
     def _print_explainability_summary(self):
         log = self._decision_log
@@ -238,11 +288,12 @@ class Controller:
         ship_pos, ship_vel, ship_heading, ast_data, map_size = self._last_snapshot
 
         class _Ast:
-            __slots__ = ('position', 'velocity', 'size')
+            __slots__ = ('position', 'velocity', 'size', 'radius')
             def __init__(self, p, v, s):
                 self.position = p
                 self.velocity = v
                 self.size     = s
+                self.radius   = s * 8.0      # engine: radius = size * 8
 
         try:
             asteroids = [_Ast(p, v, s) for p, v, s in ast_data]
@@ -267,4 +318,4 @@ class Controller:
     
     # @property
     # def custom_sprite_path(self) -> str:
-    #     return "A400m_kessler" 
+    #     return "A400m_kessler"

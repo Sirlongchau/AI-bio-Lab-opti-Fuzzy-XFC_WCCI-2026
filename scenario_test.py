@@ -6,10 +6,15 @@ Visualisation d'une partie avec les meilleurs paramètres GA.
 Usage : python run_scenario.py [--params best_params.json]
 """
 
+import os
 import time
 import json
 import argparse
 from pathlib import Path
+
+# Interactive run: enable the controller's debug/heatmap pipeline. Must be set
+# BEFORE importing the controller (the flag is read at import time).
+os.environ.setdefault("KESSLER_DEBUG", "1")
 
 # ── 1. Charger et appliquer les paramètres GA avant tout import contrôleur ──
 from ga_optimizer import GeneticOptimizer, Genome, apply_genome_to_modules
@@ -23,20 +28,11 @@ BEST_PARAMS_PATH = args.params
 if Path(BEST_PARAMS_PATH).exists():
     with open(BEST_PARAMS_PATH) as f:
         _d = json.load(f)
-#     print(f"✓ Best params loaded ({len(_d)} parameters)")
-#     print(f"  Supervisor  R_lo={_d.get('R_lo', 0.50):.3f}  R_hi={_d.get('R_hi', 0.60):.3f}")
-#     print(f"  Targeting   FIRE_CONE={_d.get('FIRE_CONE_DEG', 4.0):.1f}°  "
-#           f"W_RISK={_d.get('W_RISK', 2.0):.2f}  W_SMALL={_d.get('W_SMALL', 0.8):.2f}  "
-#           f"SWITCH_RATIO={_d.get('SWITCH_RATIO', 1.25):.2f}")
-#     print(f"  Repulsion   thrust={_d.get('REPULSION_THRUST', 80.0):.1f}  "
-#           f"TTC_max={_d.get('REPULSION_TTC_MAX', 2.0):.2f}s")
-# else:
-#     print("⚠ No best_params.json found — using default hyperparameters")
-#     _d = {}
 
 # ── 2. Import contrôleurs APRÈS le patch ────────────────────────────────────
 from kesslergame import Scenario, KesslerGame, GraphicsType
 from Fuzzy_MPC_Controller import Controller
+#from Fuzzy_MPC_Controller_no_debug import Controller
 from graphics_both import GraphicsBoth
 
 # ── 3. Instancier le contrôleur et patcher l'instance ───────────────────────
@@ -78,3 +74,8 @@ print(f'Asteroids hit:      {[team.asteroids_hit for team in score.teams]}')
 print(f'Deaths:             {[team.deaths for team in score.teams]}')
 print(f'Accuracy:           {[round(team.accuracy, 3) for team in score.teams]}')
 print(f'Mean eval time:     {[round(team.mean_eval_time * 1000, 2) for team in score.teams]} ms')
+
+# ── 6. Heatmap / explainability en fin de run ────────────────────────────────
+# Called here (not via atexit) so the interactive display has a live event loop.
+if hasattr(ctrl, "show_debug"):
+    ctrl.show_debug(display_seconds=2.0)
