@@ -353,7 +353,7 @@ def _eval_task(gid: int, genes: np.ndarray, scenario_cfg: dict,
 # ---------------------------------------------------------------------------
 
 W_HIT      =  3.0
-W_DEATH    = -80.0
+W_DEATH    = -200.0
 W_SURVIVAL =  40.0
 W_ACCURACY =  2.0
 
@@ -420,7 +420,7 @@ class GAConfig:
     n_workers:       int   = -1          # joblib n_jobs (-1 = tous les cœurs)
     seed:            int   = 42
     checkpoint_path: str   = "ga_checkpoint.json"
-    time_limit:      float = 40.0
+    time_limit:      float = 60.0
     # Screening comparable : tout le monde sur les `n_screen` premiers scénarios
     # (pleine durée), seuls les top `screen_frac` finissent les scénarios restants.
     use_screening:   bool  = True
@@ -464,30 +464,139 @@ class GeneticOptimizer:
         return tuple(seen) or ((1000.0, 800.0),)
 
     def _build_fixed_scenarios(self) -> List[dict]:
-        # Les `n_screen` premiers servent de filtre → on met les plus
-        # discriminants en tête (Medium représentatif + Stress exigeant).
+        """
+        Four hand-crafted scenarios spanning a difficulty gradient. Each one
+        rewards a *different* sub-policy, so the average fitness pressures the
+        GA into BOTH attacking well AND knowing when to flee.
+ 
+          1. Skill_Sparse  (10 ast, slow)              — pure turret efficiency.
+                                                         Punishes setups that
+                                                         depress firing range or
+                                                         broaden aim tolerance
+                                                         beyond what's needed.
+          2. Cluster_Cross (20 ast, medium, convergent)— a tight crossfire ring
+                                                         around the ship. The
+                                                         first big asteroid the
+                                                         turret fragments rakes
+                                                         the cluster; staying
+                                                         put = swallowed by the
+                                                         debris. The fleeing
+                                                         policy WINS here.
+          3. Wall_Pressure (28 ast, slow, aligned)     — a slow-moving wall the
+                                                         turret can shave but
+                                                         not stop in time.
+                                                         Forces some MPC use.
+          4. Storm         (40 ast, fast, random)      — chaos. Survival is the
+                                                         dominant signal; the
+                                                         fleeing policy loses
+                                                         less than the standing
+                                                         policy.
+ 
+        Two centre screens (Cluster + Wall) act as the screening filter — they
+        are the most discriminating between «attack-only» and «attack + flee».
+        Sparse and Storm sit at the extremes to guard against overfitting.
+        """
         rng = np.random.default_rng(self.cfg.seed)
-        specs = [("Medium", 20), ("Stress", 35), ("Dense", 25), ("Sparse", 10)]
-        full = []
-        for name, n_ast in specs:
-            asteroid_states = [{
-                "position": (float(rng.uniform(0, 1000)), float(rng.uniform(0, 800))),
+        MAP_W, MAP_H = 1000.0, 800.0
+        SHIP_X, SHIP_Y = 500.0, 400.0      # exact arena centre (was off-centre)
+ 
+        def jitter(v, span):
+            return float(v + rng.uniform(-span, span))
+ 
+        # ---- 1. Skill_Sparse -------------------------------------------------
+        # 10 slow asteroids spread out. Easy to clear with a good turret;
+        # rewards long firing range and tight aim tolerance.
+        skill = []
+        for _ in range(10):
+            skill.append({
+                "position": (float(rng.uniform(50, MAP_W-50)),
+                             float(rng.uniform(50, MAP_H-50))),
                 "angle":    float(rng.uniform(0, 360)),
-                "speed":    float(rng.uniform(20, 180)),
+                "speed":    float(rng.uniform(30, 90)),
                 "size":     int(rng.integers(1, 5)),
-            } for _ in range(n_ast)]
+            })
+ 
+        # ---- 2. Cluster_Cross ------------------------------------------------
+        # A ring of 20 asteroids ~250 px from the ship, each one heading
+        # roughly inward. Big asteroids placed deliberately so the inevitable
+        # fragmentation creates a converging debris swarm. Standing still is
+        # lethal; sliding 100–150 px sideways breaks the convergence.
+        cluster = []
+        for k in range(20):
+            theta = 2 * math.pi * k / 20 + jitter(0, 0.08)
+            r     = jitter(260.0, 25.0)
+            x = SHIP_X + r * math.cos(theta)
+            y = SHIP_Y + r * math.sin(theta)
+            # Velocity aimed at ship centre, magnitude moderate so the GA can
+            # actually outrun it with the MPC.
+            inward_deg = (math.degrees(math.atan2(SHIP_Y - y, SHIP_X - x))
+                          + jitter(0, 15.0)) % 360.0
+            size = 3 if (k % 4 == 0) else int(rng.integers(1, 4))    # 25% large
+            cluster.append({
+                "position": (x, y),
+                "angle":    inward_deg,
+                "speed":    float(jitter(140.0, 25.0)),
+                "size":     size,
+            })
+ 
+        # ---- 3. Wall_Pressure ------------------------------------------------
+        # 28 asteroids stacked in a slow-moving wall on the right side, drifting
+        # left. The turret can erode it but cannot annihilate it in time at any
+        # fire rate — staying put eventually loses. Retreating left buys time.
+        wall = []
+        for row in range(4):
+            for col in range(7):
+                x = jitter(850.0 - 35.0 * col, 12.0)
+                y = jitter(150.0 + 150.0 * row, 12.0)
+                wall.append({
+                    "position": (x, y),
+                    "angle":    float(jitter(180.0, 12.0)),         # westward
+                    "speed":    float(jitter(70.0, 15.0)),
+                    "size":     int(rng.integers(2, 4)),            # mostly mid
+                })
+ 
+        # ---- 4. Storm --------------------------------------------------------
+        # 40 random fast asteroids. Survivable only with active dodging;
+        # rewards policies that limit deaths even when scoring is hard.
+        storm = []
+        for _ in range(40):
+            # Bias spawns away from the ship centre to avoid instant deaths
+            # that aren't the controller's fault.
+            while True:
+                px, py = rng.uniform(0, MAP_W), rng.uniform(0, MAP_H)
+                if (px - SHIP_X)**2 + (py - SHIP_Y)**2 > 180.0**2:
+                    break
+            storm.append({
+                "position": (float(px), float(py)),
+                "angle":    float(rng.uniform(0, 360)),
+                "speed":    float(rng.uniform(120, 280)),
+                "size":     int(rng.integers(1, 5)),
+            })
+ 
+        # ---- Assemble --------------------------------------------------------
+        # Screening order (first n_screen): Cluster + Wall — the two scenarios
+        # where «attack + occasional flee» beats «attack only».
+        specs = [
+            ("Cluster_Cross", cluster),
+            ("Wall_Pressure", wall),
+            ("Skill_Sparse",  skill),
+            ("Storm",         storm),
+        ]
+        full = []
+        for name, asteroid_states in specs:
             full.append({
                 "name":                  f"GA_{name}",
                 "asteroid_states":       asteroid_states,
-                "ship_states":           [{"position": (400, 400), "angle": 90,
-                                           "lives": 3, "team": 1,
+                "ship_states":           [{"position": (SHIP_X, SHIP_Y),
+                                           "angle": 90, "lives": 3, "team": 1,
                                            "mines_remaining": 3}],
-                "map_size":              (1000, 800),
+                "map_size":              (MAP_W, MAP_H),
                 "time_limit":            self.cfg.time_limit,
                 "ammo_limit_multiplier": 0,
                 "stop_if_no_ammo":       False,
             })
         return full
+ 
 
     # ------------------------------------------------------------------
 
