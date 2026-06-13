@@ -409,7 +409,7 @@ def gaussian_mutate(genome, sigma_frac, p_mutate, rng) -> Genome:
 
 @dataclass
 class GAConfig:
-    pop_size:        int   = 40
+    pop_size:        int   = 100
     n_generations:   int   = 25
     elite_k:         int   = 3
     tournament_k:    int   = 3
@@ -684,7 +684,7 @@ class GeneticOptimizer:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--pop",       type=int,   default=40)
+    p.add_argument("--pop",       type=int,   default=100)
     p.add_argument("--gen",       type=int,   default=25)
     p.add_argument("--workers",   type=int,   default=-1, help="joblib n_jobs (-1 = all cores)")
     p.add_argument("--sigma",     type=float, default=0.10)
