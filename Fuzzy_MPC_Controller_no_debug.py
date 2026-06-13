@@ -1,16 +1,16 @@
 
 from Casadi_mpc import MPCController
 from risk_field import RiskField
-from test_controller_fuzzy import FuzzyController
+#from test_controller_fuzzy import FuzzyController
 #from SacrificeController import SacrificeController
 from dataclasses import dataclass
 from supervisor import Supervisor
 
 class Controller:
     def __init__(self):
-        self.fuzzy = FuzzyController()
+        #self.fuzzy = FuzzyController()
         self.mpc = MPCController()
-        self.sacrifice = FuzzyController() # placeholder for actual SacrificeController()
+        #self.sacrifice = FuzzyController() # placeholder for actual SacrificeController()
         self.supervisor = Supervisor()
         #self.debug=debug() # placeholder for actual debug tools like FrameDebugger, RiskHeatmap, etc.
     

@@ -28,20 +28,11 @@ BEST_PARAMS_PATH = args.params
 if Path(BEST_PARAMS_PATH).exists():
     with open(BEST_PARAMS_PATH) as f:
         _d = json.load(f)
-#     print(f"✓ Best params loaded ({len(_d)} parameters)")
-#     print(f"  Supervisor  R_lo={_d.get('R_lo', 0.50):.3f}  R_hi={_d.get('R_hi', 0.60):.3f}")
-#     print(f"  Targeting   FIRE_CONE={_d.get('FIRE_CONE_DEG', 4.0):.1f}°  "
-#           f"W_RISK={_d.get('W_RISK', 2.0):.2f}  W_SMALL={_d.get('W_SMALL', 0.8):.2f}  "
-#           f"SWITCH_RATIO={_d.get('SWITCH_RATIO', 1.25):.2f}")
-#     print(f"  Repulsion   thrust={_d.get('REPULSION_THRUST', 80.0):.1f}  "
-#           f"TTC_max={_d.get('REPULSION_TTC_MAX', 2.0):.2f}s")
-# else:
-#     print("⚠ No best_params.json found — using default hyperparameters")
-#     _d = {}
 
 # ── 2. Import contrôleurs APRÈS le patch ────────────────────────────────────
 from kesslergame import Scenario, KesslerGame, GraphicsType
 from Fuzzy_MPC_Controller import Controller
+#from Fuzzy_MPC_Controller_no_debug import Controller
 from graphics_both import GraphicsBoth
 
 # ── 3. Instancier le contrôleur et patcher l'instance ───────────────────────
