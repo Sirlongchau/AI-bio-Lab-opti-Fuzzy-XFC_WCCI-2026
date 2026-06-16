@@ -172,7 +172,7 @@ def time_to_collision(
             ux = dx / dist
             uy = dy / dist
 
-            closing = ux * rvx + uy * rvy
+            closing = -(ux * rvx + uy * rvy)
 
             if closing <= 0:
                 continue

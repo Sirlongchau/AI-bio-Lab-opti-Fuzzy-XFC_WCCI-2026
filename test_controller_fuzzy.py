@@ -1,0 +1,466 @@
+"""
+test_controller_fuzzy.py
+========================
+Lightweight TSK fuzzy controller for XFC Kessler.
+
+Runtime behavior:
+    - no GA / optimizer at match time
+    - crisp TargetSelector chooses target + predicted aim bearing
+    - AngularProfile chooses safe corridor or repulse fallback
+    - compact TSK fuzzy rule base outputs thrust and turn_rate
+    - fire decision is gated by predicted aim alignment
+"""
+
+from __future__ import annotations
+
+import math
+from typing import Any, Dict, List, Tuple
+
+from angular_profile import AngularProfile
+from risk_field import RiskField
+from target_selector import TargetSelector
+from toric_utils import angular_diff
+
+THRUST_MIN = -480.0
+THRUST_MAX = 480.0
+TURN_MIN = -180.0
+TURN_MAX = 180.0
+
+MAX_TURN_DELTA = 75.0
+MAX_THRUST_DELTA = 220.0
+
+# Membership functions
+AIM_LOCKED = (0.0, 0.0, 0.5, 2.0)
+AIM_VERY_VERY_SMALL = (0.0, 0.0, 2.0, 4.0)
+AIM_VERY_SMALL = (2.0, 4.0, 6.0, 10.0)
+AIM_SMALL = (6.0, 10.0, 15.0, 25.0)
+AIM_MEDIUM = (18.0, 35.0, 60.0, 90.0)
+AIM_LARGE = (70.0, 100.0, 180.0, 180.0)
+
+CORR_SMALL = (0.0, 0.0, 8.0, 18.0)
+CORR_MEDIUM = (12.0, 25.0, 50.0, 80.0)
+CORR_LARGE = (60.0, 90.0, 180.0, 180.0)
+
+R_LOW = (0.0, 0.0, 0.12, 0.25)
+R_MEDIUM = (0.18, 0.28, 0.42, 0.58)
+R_HIGH = (0.45, 0.65, 1.0, 1.0)
+
+TAU_IMMINENT = (0.0, 0.0, 0.85, 1.15)
+TAU_CLOSE = (0.75, 1.15, 1.65, 2.30)
+TAU_PRESSURE = (1.75, 2.30, 3.00, 4.00)
+TAU_SAFE = (3.00, 4.00, 99.0, 99.0)
+
+SPEED_STOPPED = (0.0, 0.0, 10.0, 30.0)
+SPEED_SLOW = (20.0, 50.0, 80.0, 120.0)
+SPEED_CRUISE = (90.0, 130.0, 180.0, 230.0)
+SPEED_FAST = (200.0, 260.0, 500.0, 500.0)
+
+CW_NONE = (0.0, 0.0, 2.0, 8.0)
+CW_NARROW = (5.0, 10.0, 20.0, 35.0)
+CW_MEDIUM = (25.0, 45.0, 70.0, 100.0)
+CW_WIDE = (80.0, 120.0, 360.0, 360.0)
+
+SAT_LOW = (0.0, 0.0, 0.20, 0.40)
+SAT_MEDIUM = (0.30, 0.45, 0.60, 0.75)
+SAT_HIGH = (0.65, 0.80, 1.0, 1.0)
+
+# Nearest-asteroid surface distance (px) — catches threats TTC misses
+PROX_VERYCLOSE = (0.0, 0.0, 90.0, 150.0)
+
+# --- Rule gains (turn = gain * error) and thrust setpoints (exposed for optimization) ---
+K_A1 = 0.05; THR_A1 = 0.0
+K_A2 = 2.0;  THR_A2 = 0.0
+K_A3 = 3.5;  THR_A3 = 0.0
+K_A4 = 4.0;  THR_A4 = 0.0
+CA_B1_AIM = 1.65; CA_B1_CORR = 1.35; THR_B1 = 40.0
+CA_B2_AIM = 0.90; CA_B2_CORR = 2.45; THR_B2 = 60.0
+K_B3 = 4.0;  THR_B3 = -40.0
+K_S1 = 5.0;  THR_S1 = -220.0
+K_S2 = 4.5;  THR_S2 = -120.0
+K_S3 = 5.0;  THR_S3 = -260.0
+K_S4 = 4.0;  THR_S4 = -300.0
+K_E1 = 5.0;  THR_E1 = 360.0
+K_FALLBACK = 3.0
+LIFE_S_MULT = 1.25
+LIFE_A_MULT = 1.10
+EMERGENCY_STRENGTH_TH = 0.05
+
+
+def _clamp(x: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, x))
+
+
+def _trap(x: float, a: float, b: float, c: float, d: float) -> float:
+    if x < a or x > d:
+        return 0.0
+    if b <= x <= c:
+        return 1.0
+    if x < b:
+        return 1.0 if a == b else (x - a) / (b - a)
+    return 1.0 if c == d else (d - x) / (d - c)
+
+
+def _or(*values: float) -> float:
+    return max(values) if values else 0.0
+
+
+def _and(*values: float) -> float:
+    return min(values) if values else 0.0
+
+
+def _obj_get(obj: Any, name: str, default: Any = None) -> Any:
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
+
+
+class FuzzyController:
+    def __init__(self) -> None:
+        self.risk_field = None
+        self._map_size = None
+        self.angular_profile = AngularProfile()
+        self.target_selector = TargetSelector()
+
+        self.prev_turn_rate = 0.0
+        self.prev_thrust = 0.0
+        self.debug_last: Dict[str, Any] = {}
+
+    def compute(self, ship_state, game_state):
+        if self.risk_field is None or self._map_size != game_state.map_size:
+            self._map_size = game_state.map_size
+            self.risk_field = RiskField(map_size=game_state.map_size)
+
+        ship_pos = tuple(ship_state.position)
+        ship_vel = tuple(ship_state.velocity)
+        heading = float(ship_state.heading)
+        speed = float(_obj_get(ship_state, "speed", math.hypot(ship_vel[0], ship_vel[1])))
+
+        asteroid_risks = self.risk_field.compute_all(ship_pos, ship_vel, game_state.asteroids)
+        R_global = self.risk_field.aggregate(asteroid_risks)
+        tau_min = self.risk_field.min_tau(asteroid_risks)
+        nearest_surface = min((ar.d_surface for ar in asteroid_risks), default=9999.0)
+
+        target = self.target_selector.select(
+            asteroid_risks=asteroid_risks,
+            current_heading=heading,
+            r_global=R_global,
+            ship_state=ship_state,
+            game_state=game_state,
+        )
+
+        aim_bearing = target.aim_bearing if target is not None else heading
+
+        profile = self.angular_profile.build(asteroid_risks)
+        corridors = self.angular_profile.extract_corridors(profile)
+        best_corridor = self.angular_profile.best_corridor(
+            corridors,
+            target_bearing=aim_bearing,
+            current_heading=heading,
+        )
+        saturation = self.angular_profile.saturation_fraction(profile)
+        repulse_dir = self.angular_profile.repulse_direction(profile)
+
+        if best_corridor is not None:
+            corridor_bearing = best_corridor.centre_deg
+            corridor_width = best_corridor.width_deg
+            corridor_freedom = best_corridor.freedom
+        else:
+            corridor_bearing = repulse_dir
+            corridor_width = 0.0
+            corridor_freedom = 0.0
+
+        inputs = self._build_inputs(
+            heading=heading,
+            aim_bearing=aim_bearing,
+            corridor_bearing=corridor_bearing,
+            repulse_dir=repulse_dir,
+            R_global=R_global,
+            tau_min=tau_min,
+            speed=speed,
+            corridor_width=corridor_width,
+            corridor_freedom=corridor_freedom,
+            saturation=saturation,
+            nearest_surface=nearest_surface,
+            lives=int(_obj_get(ship_state, "lives_remaining", 3) or 3),
+        )
+
+        thrust, turn_rate, emergency, dominant_rule, rule_strengths = self._tsk_infer(inputs)
+        thrust, turn_rate = self._post_process(thrust, turn_rate, emergency)
+
+        can_fire = self._can_fire(ship_state)
+        fire = self.target_selector.fire_decision(heading, target, can_fire, emergency=emergency)
+
+        self.debug_last = {
+            "R_global": R_global,
+            "tau_min": tau_min,
+            "selected_target_id": target.asteroid_id if target else None,
+            "target_score": target.score if target else None,
+            "target_score_terms": None if target is None else {
+                "delta_risk": target.delta_risk,
+                "d_acq": target.d_acq,
+                "p_frag": target.p_frag,
+                "urgency": target.urgency,
+                "aim_feasibility": target.aim_feasibility,
+            },
+            "aim_bearing": aim_bearing,
+            "current_bearing": target.bearing if target else None,
+            "aim_error": inputs["e_aim"],
+            "best_corridor": corridor_bearing,
+            "corridor_width": corridor_width,
+            "corridor_freedom": corridor_freedom,
+            "saturation": saturation,
+            "repulse_direction": repulse_dir,
+            "dominant_rule": dominant_rule,
+            "rule_strengths": rule_strengths,
+            "emergency": emergency,
+            "thrust": thrust,
+            "turn_rate": turn_rate,
+            "fire": fire,
+            "mine": False,
+        }
+
+        return thrust, turn_rate, fire, False
+
+    def _build_inputs(
+        self,
+        heading: float,
+        aim_bearing: float,
+        corridor_bearing: float,
+        repulse_dir: float,
+        R_global: float,
+        tau_min: float,
+        speed: float,
+        corridor_width: float,
+        corridor_freedom: float,
+        saturation: float,
+        nearest_surface: float,
+        lives: int,
+    ) -> Dict[str, float]:
+        se_aim = angular_diff(aim_bearing, heading)
+        se_corr = angular_diff(corridor_bearing, heading)
+        se_repulse = angular_diff(repulse_dir, heading)
+
+        tau_for_mf = tau_min if math.isfinite(tau_min) else 99.0
+        tau_inv = 0.0 if not math.isfinite(tau_min) else 1.0 / (0.1 + max(0.0, tau_min))
+
+        life_aggression = 1.0 if lives >= 3 else 0.75 if lives == 2 else 0.45
+
+        return {
+            "se_aim": se_aim,
+            "e_aim": abs(se_aim),
+            "se_corr": se_corr,
+            "e_corr": abs(se_corr),
+            "se_repulse": se_repulse,
+            "e_repulse": abs(se_repulse),
+            "R_global": R_global,
+            "tau_min": tau_for_mf,
+            "tau_inv": tau_inv,
+            "speed": speed,
+            "speed_norm": min(1.0, speed / 300.0),
+            "corridor_width": corridor_width,
+            "corridor_confidence": min(1.0, corridor_width / 90.0),
+            "corridor_freedom": corridor_freedom,
+            "saturation": saturation,
+            "nearest_surface": nearest_surface,
+            "lives": float(lives),
+            "life_aggression": life_aggression,
+        }
+
+    def _memberships(self, x: Dict[str, float]) -> Dict[str, float]:
+        return {
+            "AIM_LOCKED": _trap(x["e_aim"], *AIM_LOCKED),
+            "AIM_VERY_VERY_SMALL": _trap(x["e_aim"], *AIM_VERY_VERY_SMALL),
+            "AIM_VERY_SMALL": _trap(x["e_aim"], *AIM_VERY_SMALL),
+            "AIM_SMALL": _trap(x["e_aim"], *AIM_SMALL),
+            "AIM_MEDIUM": _trap(x["e_aim"], *AIM_MEDIUM),
+            "AIM_LARGE": _trap(x["e_aim"], *AIM_LARGE),
+
+            "CORR_SMALL": _trap(x["e_corr"], *CORR_SMALL),
+            "CORR_MEDIUM": _trap(x["e_corr"], *CORR_MEDIUM),
+            "CORR_LARGE": _trap(x["e_corr"], *CORR_LARGE),
+
+            "R_LOW": _trap(x["R_global"], *R_LOW),
+            "R_MEDIUM": _trap(x["R_global"], *R_MEDIUM),
+            "R_HIGH": _trap(x["R_global"], *R_HIGH),
+
+            "TAU_IMMINENT": _trap(x["tau_min"], *TAU_IMMINENT),
+            "TAU_CLOSE": _trap(x["tau_min"], *TAU_CLOSE),
+            "TAU_PRESSURE": _trap(x["tau_min"], *TAU_PRESSURE),
+            "TAU_SAFE": _trap(x["tau_min"], *TAU_SAFE),
+
+            "SPEED_STOPPED": _trap(x["speed"], *SPEED_STOPPED),
+            "SPEED_SLOW": _trap(x["speed"], *SPEED_SLOW),
+            "SPEED_CRUISE": _trap(x["speed"], *SPEED_CRUISE),
+            "SPEED_FAST": _trap(x["speed"], *SPEED_FAST),
+
+            "CW_NONE": _trap(x["corridor_width"], *CW_NONE),
+            "CW_NARROW": _trap(x["corridor_width"], *CW_NARROW),
+            "CW_MEDIUM": _trap(x["corridor_width"], *CW_MEDIUM),
+            "CW_WIDE": _trap(x["corridor_width"], *CW_WIDE),
+
+            "SAT_LOW": _trap(x["saturation"], *SAT_LOW),
+            "SAT_MEDIUM": _trap(x["saturation"], *SAT_MEDIUM),
+            "SAT_HIGH": _trap(x["saturation"], *SAT_HIGH),
+            "PROX_VERYCLOSE": _trap(x["nearest_surface"], *PROX_VERYCLOSE),
+        }
+
+    def _tsk_infer(self, x: Dict[str, float]) -> Tuple[float, float, bool, str, Dict[str, float]]:
+        mu = self._memberships(x)
+        se_aim = x["se_aim"]
+        se_corr = x["se_corr"]
+        se_repulse = x["se_repulse"]
+
+        rules: List[Tuple[str, float, float, float, bool]] = []
+
+        def add(name: str, strength: float, turn: float, thrust: float, emergency: bool = False):
+            if strength > 1e-6:
+                rules.append((name, strength, turn, thrust, emergency))
+
+        add(
+            "A1_perfect_aim_low_danger",
+            _and(mu["R_LOW"], mu["AIM_LOCKED"], mu["TAU_SAFE"]),
+            K_A1 * se_aim,
+            THR_A1,
+        )
+        add(
+            "A2_tiny_aim_low_danger",
+            _and(mu["R_LOW"], mu["AIM_VERY_VERY_SMALL"]),
+            K_A2 * se_aim,
+            THR_A2,
+        )
+        add(
+            "A3_small_aim_low_danger",
+            _and(mu["R_LOW"], _or(mu["AIM_VERY_SMALL"], mu["AIM_SMALL"])),
+            K_A3 * se_aim,
+            THR_A3,
+        )
+        add(
+            "A4_medium_aim_low_danger",
+            _and(mu["R_LOW"], mu["AIM_MEDIUM"]),
+            K_A4 * se_aim,
+            THR_A4,
+        )
+        add(
+            "B1_medium_risk_wide_corridor",
+            _and(mu["R_MEDIUM"], mu["CW_WIDE"], _or(mu["TAU_PRESSURE"], mu["TAU_SAFE"])),
+            CA_B1_AIM * se_aim + CA_B1_CORR * se_corr,
+            THR_B1,
+        )
+        add(
+            "B2_medium_risk_close_ttc",
+            _and(mu["R_MEDIUM"], mu["TAU_CLOSE"]),
+            CA_B2_AIM * se_aim + CA_B2_CORR * se_corr,
+            THR_B2,
+        )
+        add(
+            "B3_medium_risk_narrow_corridor",
+            _and(mu["R_MEDIUM"], mu["CW_NARROW"]),
+            K_B3 * se_corr,
+            THR_B3,
+        )
+        add(
+            "S1_imminent_collision",
+            mu["TAU_IMMINENT"],
+            K_S1 * se_corr,
+            THR_S1,
+            True,
+        )
+        add(
+            "S2_high_risk_corridor_available",
+            _and(mu["R_HIGH"], _or(mu["CW_MEDIUM"], mu["CW_WIDE"])),
+            K_S2 * se_corr,
+            THR_S2,
+        )
+        add(
+            "S3_high_saturation_no_corridor",
+            _and(mu["SAT_HIGH"], mu["CW_NONE"]),
+            K_S3 * se_repulse,
+            THR_S3,
+            True,
+        )
+        add(
+            "S4_fast_speed_close_threat",
+            _and(mu["SPEED_FAST"], mu["TAU_CLOSE"]),
+            K_S4 * se_corr,
+            THR_S4,
+        )
+        add(
+            "E1_proximity_evade",
+            mu["PROX_VERYCLOSE"],
+            K_E1 * se_repulse,
+            THR_E1,
+            True,
+        )
+
+        # Life-sensitive bias.  Last life increases survival-rule weight; full lives
+        # slightly increase attack-rule influence.
+        life = x["life_aggression"]
+        adjusted: List[Tuple[str, float, float, float, bool]] = []
+        for name, w, turn, thrust, emergency in rules:
+            if name.startswith("S") and life < 0.6:
+                w *= LIFE_S_MULT
+            elif name.startswith("A") and life > 0.9:
+                w *= LIFE_A_MULT
+            adjusted.append((name, w, turn, thrust, emergency))
+        rules = adjusted
+
+        if not rules:
+            return _clamp(0.0, THRUST_MIN, THRUST_MAX), _clamp(K_FALLBACK * se_aim, TURN_MIN, TURN_MAX), False, "fallback_aim", {}
+
+        total_w = sum(w for _, w, _, _, _ in rules)
+        turn = sum(w * y for _, w, y, _, _ in rules) / total_w
+        thrust = sum(w * u for _, w, _, u, _ in rules) / total_w
+
+        dominant = max(rules, key=lambda r: r[1])
+        emergency_strength = max((w for _, w, _, _, e in rules if e), default=0.0)
+        emergency = emergency_strength > EMERGENCY_STRENGTH_TH or dominant[4]
+
+        rule_strengths = {name: round(w, 4) for name, w, _, _, _ in rules}
+        return thrust, turn, emergency, dominant[0], rule_strengths
+
+    def _post_process(self, thrust: float, turn_rate: float, emergency: bool = False) -> Tuple[float, float]:
+        turn_rate = _clamp(turn_rate, TURN_MIN, TURN_MAX)
+        thrust = _clamp(thrust, THRUST_MIN, THRUST_MAX)
+
+        # Emergency needs immediate authority; normal mode stays smoothed.
+        if emergency:
+            max_turn_delta = 180.0
+            max_thrust_delta = 480.0
+        else:
+            max_turn_delta = MAX_TURN_DELTA
+            max_thrust_delta = MAX_THRUST_DELTA
+
+        turn_rate = _clamp(
+            turn_rate,
+            self.prev_turn_rate - max_turn_delta,
+            self.prev_turn_rate + max_turn_delta,
+        )
+        thrust = _clamp(
+            thrust,
+            self.prev_thrust - max_thrust_delta,
+            self.prev_thrust + max_thrust_delta,
+        )
+
+        # Small deadband prevents visible twitching around zero.
+        if abs(turn_rate) < 2.0:
+            turn_rate = 0.0
+        if abs(thrust) < 5.0:
+            thrust = 0.0
+
+        self.prev_turn_rate = turn_rate
+        self.prev_thrust = thrust
+        return thrust, turn_rate
+
+    def explain(self) -> Dict[str, Any]:
+        """Full decision trace for the most recent frame (for XAI / telemetry)."""
+        return dict(self.debug_last)
+
+    def _can_fire(self, ship_state: Any) -> bool:
+        if bool(_obj_get(ship_state, "is_respawning", False)):
+            return False
+        if float(_obj_get(ship_state, "respawn_time_left", 0.0) or 0.0) > 0.0:
+            return False
+        cooldown = _obj_get(ship_state, "fire_cooldown", None)
+        if cooldown is not None and cooldown > 0:
+            return False
+        return True

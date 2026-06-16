@@ -1,33 +1,32 @@
 ﻿# -*- coding: utf-8 -*-
 """
-scenario_test.py
-================
-Visual/headless scenario runner.
+scenario_test_visual_heatmap.py
+===============================
+Visual test runner with post-run explainability heatmaps.
 
-Default params:
-    best_params_safety_mine_v1.json
+Usage:
+    python .\scenario_test_visual_heatmap.py --params .\best_params.json
 """
 
 import os
+
+# Must be set BEFORE importing Fuzzy_MPC_Controller.
+os.environ["KESSLER_DEBUG"] = "1"
+
 import time
 import json
 import argparse
 from pathlib import Path
 
+from ga_optimizer import apply_genome_to_modules
+
 parser = argparse.ArgumentParser()
-parser.add_argument("--params", default="best_params_safety_mine_v1.json")
-parser.add_argument("--nogfx", action="store_true")
+parser.add_argument("--params", default="best_params.json")
+parser.add_argument("--display-seconds", type=float, default=2.5)
 args = parser.parse_args()
 
 params_path = Path(args.params)
 _d = {}
-
-if args.nogfx:
-    os.environ["KESSLER_DEBUG"] = "0"
-else:
-    os.environ.setdefault("KESSLER_DEBUG", "1")
-
-from ga_optimizer import apply_genome_to_modules
 
 if params_path.exists():
     with open(params_path, "r", encoding="utf-8") as f:
@@ -37,14 +36,14 @@ if params_path.exists():
     apply_genome_to_modules(_d)
 else:
     print(f"WARNING: params file not found: {params_path}")
-    print("Running with default hardcoded controller parameters.")
+    print("Running with hardcoded/default controller parameters.")
 
 from kesslergame import Scenario, KesslerGame, GraphicsType
 from Fuzzy_MPC_Controller import Controller
 
 ctrl = Controller()
 
-# Supervisor values are instance attributes.
+# Supervisor values are instance attributes, so patch them explicitly.
 if _d:
     if "R_lo" in _d:
         ctrl.supervisor.R_lo = _d["R_lo"]
@@ -61,7 +60,7 @@ if _d:
         ctrl.supervisor.mpc_fail_limit = int(_d["MPC_FAIL_LIMIT"])
 
 scenario = Scenario(
-    name="Test Scenario",
+    name="Test Scenario Visual Heatmap",
     num_asteroids=10,
     ship_states=[
         {
@@ -80,8 +79,8 @@ scenario = Scenario(
 
 settings = {
     "perf_tracker": True,
-    "graphics_type": GraphicsType.NoGraphics if args.nogfx else GraphicsType.Tkinter,
-    "realtime_multiplier": 0 if args.nogfx else 1,
+    "graphics_type": GraphicsType.Tkinter,
+    "realtime_multiplier": 1,
     "graphics_obj": None,
     "frequency": 30,
 }
@@ -98,3 +97,9 @@ print(f"Asteroids hit:      {[team.asteroids_hit for team in score.teams]}")
 print(f"Deaths:             {[team.deaths for team in score.teams]}")
 print(f"Accuracy:           {[round(team.accuracy, 3) for team in score.teams]}")
 print(f"Mean eval time:     {[round(team.mean_eval_time * 1000, 2) for team in score.teams]} ms")
+
+# Heatmap / explainability display after the run.
+if hasattr(ctrl, "show_debug"):
+    ctrl.show_debug(display_seconds=args.display_seconds)
+else:
+    print("[debug_tools] Controller has no show_debug() method.")

@@ -303,10 +303,19 @@ class TargetingController:
 # SacrificeController — clear the field on the way down
 # ---------------------------------------------------------------------------
 
-MINE_FUSE_S    = 3.0
-MINE_BLAST_R   = 150.0
-MINE_MIN_CATCH = 3
-MINE_MAX_HOLD  = 15
+MINE_FUSE_S        = 3.0
+MINE_BLAST_R       = 150.0
+
+# GA-tunable mine policy:
+# Drop when TTC is medium and risk is high, especially if the mine is predicted
+# to catch enough asteroids or the nearest medium/high-risk object is close.
+MINE_MIN_CATCH     = 2
+MINE_MAX_HOLD      = 18
+MINE_TAU_MIN       = 0.70
+MINE_TAU_MAX       = 3.00
+MINE_RISK_TH       = 0.55
+MINE_NEAR_SURFACE  = 210.0
+MINE_COOLDOWN_FRAMES = 30
 
 
 class SacrificeController:
@@ -317,7 +326,8 @@ class SacrificeController:
 
     def __init__(self) -> None:
         self._turret        = TargetingController()
-        self._mine_used     = False
+        self._mine_used     = False  # legacy flag; not used by new policy
+        self._last_mine_frame = -9999
         self._active_frames = 0
 
     def compute(self, ship_state, game_state, asteroid_risks, now=None
@@ -328,21 +338,60 @@ class SacrificeController:
         return thrust, turn_rate, fire, drop_mine
 
     def reset(self) -> None:
-        self._mine_used     = False
+        self._mine_used     = False  # legacy flag; not used by new policy
+        self._last_mine_frame = -9999
         self._active_frames = 0
         self._turret._locked = None
 
     def _decide_mine(self, ship_state, game_state, risks) -> bool:
-        if self._mine_used or not risks:
+        """
+        Mine policy:
+        - Uses all available mines, not just one.
+        - Drops only when at least one asteroid has medium TTC and high risk.
+        - Requires either predicted mine catch OR close surface distance.
+        - Tuned by GA through globals patched from ga_optimizer.py.
+        """
+        if not risks:
             return False
-        if ship_state.mines_remaining == 0 or not getattr(ship_state, 'can_deploy_mine', True):
+        if getattr(ship_state, "respawn_time_left", 0.0) > 0:
+            return False
+        if ship_state.mines_remaining == 0 or not getattr(ship_state, "can_deploy_mine", True):
             return False
 
         self._active_frames += 1
+
+        if not hasattr(self, "_last_mine_frame"):
+            self._last_mine_frame = -9999
+
+        if (self._active_frames - self._last_mine_frame) < MINE_COOLDOWN_FRAMES:
+            return False
+
+        medium_high = [
+            ar for ar in risks
+            if (
+                math.isfinite(ar.tau)
+                and MINE_TAU_MIN <= ar.tau <= MINE_TAU_MAX
+                and ar.risk >= MINE_RISK_TH
+            )
+        ]
+
+        if not medium_high:
+            return False
+
+        nearest_medium_high = min((ar.d_surface for ar in medium_high), default=9999.0)
         catch = self._predicted_catch(ship_state, game_state, risks)
-        if catch >= MINE_MIN_CATCH or self._active_frames >= MINE_MAX_HOLD:
-            self._mine_used = True
+
+        should_drop = (
+            catch >= MINE_MIN_CATCH
+            or nearest_medium_high <= MINE_NEAR_SURFACE
+            or self._active_frames >= MINE_MAX_HOLD
+        )
+
+        if should_drop:
+            self._last_mine_frame = self._active_frames
+            self._active_frames = 0
             return True
+
         return False
 
     @staticmethod

@@ -1,5 +1,16 @@
 import atexit
 import os
+import sys
+
+# Console output uses Unicode (→, ✓, ρ, °). On Windows the default console
+# encoding is cp1252, which can't encode these and raises UnicodeEncodeError
+# mid-print. Force stdout/stderr to UTF-8 so all run paths print cleanly.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass  # older Python or already-wrapped stream — best effort only
+
 import matplotlib
 matplotlib.use('Agg')  # file-only backend — must be set before any pyplot import
 
@@ -14,7 +25,7 @@ from debug_tools import debug_snapshot, replay_heatmaps
 
 from Casadi_mpc import MPCController
 from risk_field import RiskField
-#from test_controller_fuzzy import FuzzyController
+from test_controller_fuzzy import FuzzyController
 #from SacrificeController import SacrificeController
 from dataclasses import dataclass
 from supervisor import Supervisor
@@ -23,9 +34,9 @@ _HEATMAP_DIR = "heatmaps"
 
 class Controller:
     def __init__(self):
-        #self.fuzzy = FuzzyController()
+        self.fuzzy = FuzzyController()
         self.mpc = MPCController()
-        #self.sacrifice = FuzzyController() # placeholder for actual SacrificeController()
+        self.sacrifice = FuzzyController() # placeholder for actual SacrificeController()
         self.supervisor = Supervisor()
         #self.debug=debug() # placeholder for actual debug tools like FrameDebugger, RiskHeatmap, etc.
         self._debug_ap   = AngularProfile()
@@ -52,7 +63,9 @@ class Controller:
         output = self.supervisor.compute(ship_state, game_state)  # control output
 
         if not _DEBUG:
-            return output
+            __edge_output = output
+            __edge_output = self._edge_guard_output(__edge_output, ship_state, game_state)
+            return __edge_output
 
         # Every 30 frames: record decision, collect snapshot data, append to log
         if self._frame % 30 == 0:
@@ -72,7 +85,9 @@ class Controller:
             game_state.map_size,
         )
 
-        return output
+        __edge_output = output
+        __edge_output = self._edge_guard_output(__edge_output, ship_state, game_state)
+        return __edge_output
     
         # ------------------------------------------------------------------
     # Per-tick data collection — no rendering on the hot path
@@ -312,6 +327,38 @@ class Controller:
         except Exception as e:
             print(f"[debug_tools] Final heatmap failed: {e}")
     
+
+    def _edge_guard_output(self, output, ship_state, game_state):
+        """
+        Final fire guard. Movement, turning, and mines are unchanged.
+        Only fire=True can be suppressed when the shot would leave the map
+        before a direct non-wrapping intercept.
+        """
+        try:
+            if output is None:
+                return output
+
+            if not isinstance(output, (tuple, list)):
+                return output
+
+            if len(output) < 3:
+                return output
+
+            if not bool(output[2]):
+                return output
+
+            from edge_fire_guard import edge_safe_fire
+
+            if edge_safe_fire(ship_state, game_state):
+                return output
+
+            out = list(output)
+            out[2] = False
+            return tuple(out) if isinstance(output, tuple) else out
+
+        except Exception:
+            return output
+
     @property
     def name(self) -> str:
         return "fuzzy_mpc_hybrid_controller"

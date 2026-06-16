@@ -31,7 +31,16 @@ import argparse
 import json
 import math
 import os
+import sys
 import time
+
+# Console output uses Unicode (✓, ⇄, ↩). On Windows the default console
+# encoding is cp1252 and raises UnicodeEncodeError mid-print; force UTF-8.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass  # older Python or already-wrapped stream — best effort only
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -58,6 +67,10 @@ PARAM_SPECS: List[ParamSpec] = [
     # ── Supervisor (hystérésis de mode) ───────────────────────────────────
     ParamSpec("R_lo", 0.60, 0.050, 0.92, "supervisor"),
     ParamSpec("R_hi", 0.80, 0.10, 0.98, "supervisor"),
+    ParamSpec("MPC_TAU_TRIGGER",  1.25, 0.35, 3.00, "supervisor"),
+    ParamSpec("MPC_NEAR_TRIGGER", 135.0, 40.0, 320.0, "supervisor"),
+    ParamSpec("MPC_RISK_TRIGGER", 0.45, 0.05, 0.95, "supervisor"),
+    ParamSpec("MPC_FAIL_LIMIT",   3.0,  1.0,  8.0, "supervisor", is_int=True),
 
     # ── RiskField (corrige le retard d'évaluation via les MF) ─────────────
     ParamSpec("alpha_aggregation", 0.60, 0.0, 1.0, "risk_field"),
@@ -122,6 +135,10 @@ PARAM_SPECS: List[ParamSpec] = [
     # ── Sacrifice ─────────────────────────────────────────────────────────
     ParamSpec("MINE_MIN_CATCH", 3.0, 1.0,  8.0, "targeting", is_int=True),
     ParamSpec("MINE_MAX_HOLD", 15.0, 3.0, 40.0, "targeting", is_int=True),
+    ParamSpec("MINE_TAU_MIN",      0.70, 0.20, 2.00, "targeting"),
+    ParamSpec("MINE_TAU_MAX",      3.00, 1.00, 6.00, "targeting"),
+    ParamSpec("MINE_RISK_TH",      0.55, 0.10, 0.95, "targeting"),
+    ParamSpec("MINE_NEAR_SURFACE", 210.0, 60.0, 420.0, "targeting"),
 ]
 
 N_PARAMS    = len(PARAM_SPECS)
@@ -185,6 +202,7 @@ class Genome:
         ordpair("tau_med_c",   "tau_med_d",   0.10)
         ordpair("d_near_c", "d_near_d", 5.0)                # distance monotone
         ordpair("d_med_a",  "d_med_d", 10.0)
+        ordpair("MINE_TAU_MIN", "MINE_TAU_MAX", 0.20)
         # ordpair("out_negligible", "out_low",    0.01)       # singletons ordonnés
         # ordpair("out_low",        "out_medium", 0.01)
         # ordpair("out_medium",     "out_high",   0.01)
@@ -202,6 +220,15 @@ class Genome:
 
 def apply_genome_to_modules(d: Dict[str, float]) -> None:
     """Patch les globals des modules. Idempotent, appelé à chaque tâche."""
+    try:
+        import supervisor as sp
+        sp.MPC_TAU_TRIGGER  = d["MPC_TAU_TRIGGER"]
+        sp.MPC_NEAR_TRIGGER = d["MPC_NEAR_TRIGGER"]
+        sp.MPC_RISK_TRIGGER = d["MPC_RISK_TRIGGER"]
+        sp.MPC_FAIL_LIMIT   = int(d["MPC_FAIL_LIMIT"])
+    except ImportError:
+        pass
+
     try:
         import risk_field as rf
         rf.ALPHA_AGGREGATION = d["alpha_aggregation"]
@@ -244,6 +271,10 @@ def apply_genome_to_modules(d: Dict[str, float]) -> None:
         ts.TRACK_TOL_PX   = d["TRACK_TOL_PX"]
         ts.MINE_MIN_CATCH = int(d["MINE_MIN_CATCH"])
         ts.MINE_MAX_HOLD  = int(d["MINE_MAX_HOLD"])
+        ts.MINE_TAU_MIN   = d["MINE_TAU_MIN"]
+        ts.MINE_TAU_MAX   = d["MINE_TAU_MAX"]
+        ts.MINE_RISK_TH   = d["MINE_RISK_TH"]
+        ts.MINE_NEAR_SURFACE = d["MINE_NEAR_SURFACE"]
     except ImportError:
         pass
 
@@ -329,22 +360,30 @@ def _eval_task(gid: int, genes: np.ndarray, scenario_cfg: dict,
         ctrl = _make_controller(scenario_cfg["map_size"])
         ctrl.supervisor.R_lo = d["R_lo"]
         ctrl.supervisor.R_hi = d["R_hi"]
+        ctrl.supervisor.mpc_tau_trigger = d["MPC_TAU_TRIGGER"]
+        ctrl.supervisor.mpc_near_trigger = d["MPC_NEAR_TRIGGER"]
+        ctrl.supervisor.mpc_risk_trigger = d["MPC_RISK_TRIGGER"]
+        ctrl.supervisor.mpc_fail_limit = int(d["MPC_FAIL_LIMIT"])
 
         score, _ = _W["KesslerGame"](settings=settings).run(
             scenario=_W["Scenario"](**scenario_cfg), controllers=[ctrl]
         )
         team = score.teams[0]
+        stop_s = str(score.stop_reason)
         return gid, {
             "hit":    team.asteroids_hit,
             "deaths": team.deaths,
             "lives":  max(0, 3 - team.deaths),
             "acc":    min(1.0, team.accuracy),
+            "stop_no_ships": ("no_ships" in stop_s),
+            "n_asteroids": scenario_cfg.get("num_asteroids", 1),
             "error":  None,
         }
     except Exception as exc:
         import traceback
         traceback.print_exc()
         return gid, {"hit": 0, "deaths": 3, "lives": 0, "acc": 0.0,
+                     "stop_no_ships": True, "n_asteroids": scenario_cfg.get("num_asteroids", 1),
                      "error": str(exc)}
 
 
@@ -352,28 +391,65 @@ def _eval_task(gid: int, genes: np.ndarray, scenario_cfg: dict,
 # Fitness
 # ---------------------------------------------------------------------------
 
-W_HIT      =  3.0
-W_DEATH    = -200.0
-W_SURVIVAL =  40.0
-W_ACCURACY =  2.0
+# v2 weights: the v1 death-gate (-200) was so steep that surviving a single hard
+# scenario dominated the per-scenario mean, so the GA traded away accuracy
+# everywhere (0.87 -> 0.42) to buy one survival — making it worse than default on
+# easy/sparse scenarios. Softer death penalty + stronger accuracy reward keep
+# survival valued (hit_mult already triples hits when surviving) without letting
+# one survival swamp offense across all other scenarios.
+# Safety-first v3:
+#   - strong penalty for deaths / no_ships
+#   - large bonus for zero-death runs
+#   - still rewards hits and accuracy so the policy does not only flee
+W_HIT            =  8.0
+W_HIT_RATIO      =  250.0
+W_DEATH          = -300.0
+W_SURVIVAL       =  150.0
+W_ZERO_DEATH     =  350.0
+W_NO_SHIPS       = -500.0
+W_ACCURACY       =  2.0
 
 
 def compute_fitness(scenario_results: List[dict]) -> float:
-    """Moyenne PAR SCÉNARIO d'une fitness à gate de survie (échelle stable
-    quel que soit le nombre de scénarios → screening comparable)."""
+    """Mean per-scenario fitness.
+
+    Objective:
+      1. Stay alive.
+      2. Do not end with no_ships.
+      3. Still destroy asteroids and maintain accuracy.
+    """
     if not scenario_results:
         return -9999.0
+
     fits = []
     for r in scenario_results:
-        if r["error"]:
+        if r.get("error"):
             fits.append(-9999.0)
             continue
-        surv     = r["lives"] / 3.0
-        hit_mult = 0.3 + 0.7 * surv
-        fits.append(W_HIT      * r["hit"] * hit_mult
-                  + W_DEATH    * r["deaths"]
-                  + W_SURVIVAL * r["lives"]
-                  + W_ACCURACY * r["acc"] * 100.0)
+
+        hit = float(r.get("hit", 0))
+        deaths = float(r.get("deaths", 3))
+        lives = float(r.get("lives", max(0, 3 - deaths)))
+        acc = float(r.get("acc", 0.0))
+        n_ast = max(float(r.get("n_asteroids", 1)), 1.0)
+        hit_ratio = min(hit / n_ast, 2.0)
+
+        score = (
+            W_HIT       * hit
+            + W_HIT_RATIO * hit_ratio
+            + W_DEATH     * deaths
+            + W_SURVIVAL  * lives
+            + W_ACCURACY  * acc * 100.0
+        )
+
+        if deaths == 0:
+            score += W_ZERO_DEATH
+
+        if r.get("stop_no_ships", False):
+            score += W_NO_SHIPS
+
+        fits.append(score)
+
     return float(np.mean(fits))
 
 
@@ -590,7 +666,8 @@ class GeneticOptimizer:
                 "ship_states":           [{"position": (SHIP_X, SHIP_Y),
                                            "angle": 90, "lives": 3, "team": 1,
                                            "mines_remaining": 3}],
-                "map_size":              (MAP_W, MAP_H),
+                # KesslerGame's Scenario type-checks map_size as tuple[int, int].
+                "map_size":              (int(MAP_W), int(MAP_H)),
                 "time_limit":            self.cfg.time_limit,
                 "ammo_limit_multiplier": 0,
                 "stop_if_no_ammo":       False,
