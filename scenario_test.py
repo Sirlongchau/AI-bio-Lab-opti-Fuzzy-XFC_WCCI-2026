@@ -25,6 +25,7 @@ args = parser.parse_args()
 
 BEST_PARAMS_PATH = args.params
 
+_d = {}
 if Path(BEST_PARAMS_PATH).exists():
     with open(BEST_PARAMS_PATH) as f:
         _d = json.load(f)
@@ -40,6 +41,14 @@ ctrl = Controller()
 
 if _d:
     apply_genome_to_modules(_d)
+    # apply_genome_to_modules only patches risk_field / targeting_system module
+    # globals — the supervisor thresholds are INSTANCE attributes and must be
+    # set here, otherwise the interactive run silently uses the defaults
+    # (R_lo=0.80 / R_hi=0.90) instead of the trained genome.
+    sup = ctrl.supervisor
+    if "R_lo" in _d:          sup.R_lo = _d["R_lo"]
+    if "R_hi" in _d:          sup.R_hi = _d["R_hi"]
+    if "TAU_EMERGENCY" in _d: sup.TAU_EMERGENCY = _d["TAU_EMERGENCY"]
 
 # ── 4. Scénario ──────────────────────────────────────────────────────────────
 my_test_scenario = Scenario(
