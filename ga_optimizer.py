@@ -56,23 +56,31 @@ class ParamSpec:
 
 PARAM_SPECS: List[ParamSpec] = [
     # ── Supervisor (hystérésis de mode) ───────────────────────────────────
+    # ── Supervisor (hystérésis de mode + horizon de sécurité dur) ─────────
     ParamSpec("R_lo", 0.60, 0.050, 0.92, "supervisor"),
     ParamSpec("R_hi", 0.80, 0.10, 0.98, "supervisor"),
+    # Hard evade trigger: if the soonest surface-TTC drops below this, the
+    # supervisor forces MPC regardless of the crowd aggregate. This is what
+    # makes a SINGLE imminent collision evade (the fuzzy aggregate alone can
+    # never saturate on one threat once alpha<R_hi).
+    ParamSpec("TAU_EMERGENCY", 1.20, 0.50, 2.50, "supervisor"),
 
-    # ── RiskField (corrige le retard d'évaluation via les MF) ─────────────
+    # ── RiskField — partitions de l'unité par NŒUDS croissants ────────────
+    # tau : tk0<tk1<tk2<tk3<tk4<tk5  (4 trapèzes : crit/close/med/far)
+    # d   : dk0<dk1<dk2<dk3          (3 trapèzes : near/med/far)
+    # L'ordre strict est garanti par Genome.repair() (chain()), donc le GA ne
+    # peut JAMAIS produire de zone morte ni de trapèze invalide.
     ParamSpec("alpha_aggregation", 0.60, 0.0, 1.0, "risk_field"),
-    ParamSpec("tau_crit_b",   0.25, 0.05,  3.0, "risk_field"),
-    ParamSpec("tau_crit_d",   0.50, 0.10,  5.0, "risk_field"),
-    ParamSpec("tau_close_a",  0.25, 0.05,  5.0, "risk_field"),
-    ParamSpec("tau_close_b",  0.50, 0.10,  6.0, "risk_field"),
-    ParamSpec("tau_close_d",  1.50, 0.30,  8.0, "risk_field"),
-    ParamSpec("tau_med_a",    0.60, 0.10,  8.0, "risk_field"),
-    ParamSpec("tau_med_c",    1.50, 0.30, 10.0, "risk_field"),
-    ParamSpec("tau_med_d",    5.50, 1.00, 20.0, "risk_field"),
-    ParamSpec("d_near_c",    50.0,  10.0,  400.0, "risk_field"),
-    ParamSpec("d_near_d",    90.0,  20.0,  600.0, "risk_field"),
-    ParamSpec("d_med_a",     50.0,  10.0,  500.0, "risk_field"),
-    ParamSpec("d_med_d",    220.0,  50.0, 1000.0, "risk_field"),
+    ParamSpec("tau_k0", 0.40, 0.10,  2.0, "risk_field"),
+    ParamSpec("tau_k1", 0.90, 0.20,  3.0, "risk_field"),
+    ParamSpec("tau_k2", 1.60, 0.30,  5.0, "risk_field"),
+    ParamSpec("tau_k3", 2.60, 0.50,  8.0, "risk_field"),
+    ParamSpec("tau_k4", 4.00, 1.00, 12.0, "risk_field"),
+    ParamSpec("tau_k5", 6.00, 2.00, 25.0, "risk_field"),
+    ParamSpec("d_k0",  60.0, 10.0, 200.0, "risk_field"),
+    ParamSpec("d_k1", 110.0, 20.0, 350.0, "risk_field"),
+    ParamSpec("d_k2", 180.0, 40.0, 500.0, "risk_field"),
+    ParamSpec("d_k3", 260.0, 60.0, 800.0, "risk_field"),
     ParamSpec("FFS", 0.02, 0.0, 1.0, "risk_field"),
     ParamSpec("FFM", 0.04, 0.0, 1.0, "risk_field"),
     ParamSpec("FFL", 0.08, 0.0, 1.0, "risk_field"),
@@ -114,8 +122,8 @@ PARAM_SPECS: List[ParamSpec] = [
     ParamSpec("W_CLOSE",       0.25,    0.0,    1.0, "targeting"),
     ParamSpec("MAX_DIST_FIRE", 700.0, 200.0, 1200.0, "targeting"),
     ParamSpec("HIT_FRACTION",  0.85,    0.40,   1.0, "targeting"),
-    ParamSpec("STICK_DEG",     50.0,   20.0,  120.0, "targeting"),
-    ParamSpec("STICK_GAIN",    1.0,     0.0,    6.0, "targeting"),
+    ParamSpec("STICK_DEG",     40.0,   15.0,   60.0, "targeting"),
+    ParamSpec("STICK_GAIN",    0.8,     0.0,    1.5, "targeting"),
     ParamSpec("SWITCH_RATIO",  1.30,    1.0,    3.0, "targeting"),
     ParamSpec("TRACK_TOL_PX",  28.0,   10.0,   80.0, "targeting"),
 
@@ -168,8 +176,10 @@ class Genome:
     def repair(self) -> None:
         np.clip(self.genes, _LO, _HI, out=self.genes)
 
-        g = lambda n: float(self.genes[_IDX[n]])
-        def s(n, v): self.genes[_IDX[n]] = float(v)
+        gax = self.genes
+        g = lambda n: float(gax[_IDX[n]])
+        def s(n, v): gax[_IDX[n]] = float(v)
+
         def ordpair(a, b, gap):
             va, vb = g(a), g(b)
             if va >= vb - gap:
@@ -177,17 +187,37 @@ class Genome:
                 s(a, mid - gap / 2.0)
                 s(b, mid + gap / 2.0)
 
+        def chain(names, gap):
+            """Force names to be strictly increasing (push upward only)."""
+            prev = g(names[0])
+            for n in names[1:]:
+                v = max(g(n), prev + gap)
+                s(n, v)
+                prev = v
+
         ordpair("R_lo", "R_hi", 0.05)                       # hystérésis correcte
-        ordpair("tau_crit_b",  "tau_crit_d",  0.05)         # tau monotone
-        ordpair("tau_close_a", "tau_close_b", 0.05)
-        ordpair("tau_close_b", "tau_close_d", 0.05)
-        ordpair("tau_med_a",   "tau_med_c",   0.05)
-        ordpair("tau_med_c",   "tau_med_d",   0.10)
-        ordpair("d_near_c", "d_near_d", 5.0)                # distance monotone
-        ordpair("d_med_a",  "d_med_d", 10.0)
-        # ordpair("out_negligible", "out_low",    0.01)       # singletons ordonnés
-        # ordpair("out_low",        "out_medium", 0.01)
-        # ordpair("out_medium",     "out_high",   0.01)
+
+        # Partition de l'unité : nœuds strictement croissants ⇒ pas de zone
+        # morte ni de trapèze invalide possible, quel que soit le génome.
+        chain(["tau_k0", "tau_k1", "tau_k2", "tau_k3", "tau_k4", "tau_k5"], 0.05)
+        chain(["d_k0", "d_k1", "d_k2", "d_k3"], 8.0)
+
+        # Consequents monotones sur le treillis (tau × dist × size).
+        # risk décroît avec : urgence (C>M>F), proximité (N>M>F), taille (L>M>S).
+        # ⇒ surface de risque physique, espace de recherche fortement réduit.
+        def ci(t, di, sz): return _IDX[t + di + sz]
+        for _ in range(3):                       # quelques passes ⇒ convergence
+            for sz in "LMS":
+                for di in "NMF":                 # urgence : C ≥ M ≥ F
+                    for a, b in zip("CMF", "MF"):
+                        gax[ci(b, di, sz)] = min(gax[ci(b, di, sz)], gax[ci(a, di, sz)])
+                for t in "CMF":                  # proximité : N ≥ M ≥ F
+                    for a, b in zip("NMF", "MF"):
+                        gax[ci(t, b, sz)] = min(gax[ci(t, b, sz)], gax[ci(t, a, sz)])
+            for di in "NMF":                     # taille : L ≥ M ≥ S
+                for t in "CMF":
+                    for a, b in zip("LMS", "MS"):
+                        gax[ci(t, di, b)] = min(gax[ci(t, di, b)], gax[ci(t, di, a)])
 
         np.clip(self.genes, _LO, _HI, out=self.genes)
         self.genes[_IS_INT] = np.round(self.genes[_IS_INT])
@@ -204,17 +234,24 @@ def apply_genome_to_modules(d: Dict[str, float]) -> None:
     """Patch les globals des modules. Idempotent, appelé à chaque tâche."""
     try:
         import risk_field as rf
-        rf.ALPHA_AGGREGATION = d["alpha_aggregation"]
-        rf.TAU_CRITICAL = (0.0, 0.0, d["tau_crit_b"], d["tau_crit_d"])
-        cb = d["tau_close_b"]
-        rf.TAU_CLOSE  = (d["tau_close_a"], cb, cb, d["tau_close_d"])
-        mc = d["tau_med_c"]
-        rf.TAU_MEDIUM = (d["tau_med_a"], mc, mc, d["tau_med_d"])
-        rf.TAU_FAR    = (mc, d["tau_med_d"], 99.0, 99.0)
-        dnd = d["d_near_d"]
-        rf.D_NEAR   = (0.0, 0.0, d["d_near_c"], dnd)
-        rf.D_MEDIUM = (d["d_med_a"], dnd, dnd, d["d_med_d"])
-        rf.D_FAR    = (dnd, d["d_med_d"], 9999.0, 9999.0)
+        rf.ALPHA_AGGREGATION = d.get("alpha_aggregation", rf.ALPHA_AGGREGATION)
+
+        # Rebuild the partitions of unity from SORTED knots (same scheme as the
+        # risk_field defaults). sorted() is a safety net; Genome.repair() has
+        # already ordered them. .get() keeps legacy param files runnable: a JSON
+        # missing the knot keys simply falls back to the module defaults.
+        tk = sorted(d.get(f"tau_k{i}", v)
+                    for i, v in enumerate((0.4, 0.9, 1.6, 2.6, 4.0, 6.0)))
+        rf.TAU_CRITICAL = (-1.0, -1.0, tk[0], tk[1])
+        rf.TAU_CLOSE    = (tk[0], tk[1], tk[2], tk[3])
+        rf.TAU_MEDIUM   = (tk[2], tk[3], tk[4], tk[5])
+        rf.TAU_FAR      = (tk[4], tk[5], 99.0, 99.0)
+
+        dk = sorted(d.get(f"d_k{i}", v)
+                    for i, v in enumerate((60.0, 110.0, 180.0, 260.0)))
+        rf.D_NEAR   = (-1.0, -1.0, dk[0], dk[1])
+        rf.D_MEDIUM = (dk[0], dk[1], dk[2], dk[3])
+        rf.D_FAR    = (dk[2], dk[3], 9999.0, 9999.0)
         for name in (
             "FFS","FFM","FFL",
             "FMS","FMM","FML",
@@ -228,7 +265,7 @@ def apply_genome_to_modules(d: Dict[str, float]) -> None:
             "MMS","MMM","MML",
             "MNS","MNM","MNL",
         ):
-            setattr(rf, name, d[name])
+            setattr(rf, name, d.get(name, getattr(rf, name)))
     except ImportError:
         pass
 
@@ -255,7 +292,7 @@ def apply_genome_to_modules(d: Dict[str, float]) -> None:
 _W: dict = {}    # cache par process : modules + solveurs CasADi pré-construits
 
 
-def _ensure_worker(map_sizes: Tuple[Tuple[float, float], ...]) -> None:
+def _ensure_worker(map_sizes: Tuple[Tuple[int, int], ...]) -> None:
     """
     Payé UNE fois par process worker (loky garde les workers chauds entre les
     générations). Importe les modules, coupe le debug du contrôleur, et
@@ -285,7 +322,7 @@ def _ensure_worker(map_sizes: Tuple[Tuple[float, float], ...]) -> None:
     _W["_ready"] = True
 
 
-def _make_controller(map_size: Tuple[float, float]):
+def _make_controller(map_size: Tuple[int, int]):
     """Controller frais branché sur le solveur CasADi pré-construit du worker."""
     ctrl = _W["Controller"]()
     try:
@@ -309,7 +346,7 @@ def _make_controller(map_size: Tuple[float, float]):
 
 def _eval_task(gid: int, genes: np.ndarray, scenario_cfg: dict,
                settings_override: dict,
-               map_sizes: Tuple[Tuple[float, float], ...]) -> Tuple[int, dict]:
+               map_sizes: Tuple[Tuple[int, int], ...]) -> Tuple[int, dict]:
     """UNE tâche = UN génome sur UN scénario."""
     _ensure_worker(map_sizes)
     genome = Genome(genes)
@@ -329,6 +366,7 @@ def _eval_task(gid: int, genes: np.ndarray, scenario_cfg: dict,
         ctrl = _make_controller(scenario_cfg["map_size"])
         ctrl.supervisor.R_lo = d["R_lo"]
         ctrl.supervisor.R_hi = d["R_hi"]
+        ctrl.supervisor.TAU_EMERGENCY = d.get("TAU_EMERGENCY", ctrl.supervisor.TAU_EMERGENCY)
 
         score, _ = _W["KesslerGame"](settings=settings).run(
             scenario=_W["Scenario"](**scenario_cfg), controllers=[ctrl]
@@ -353,7 +391,7 @@ def _eval_task(gid: int, genes: np.ndarray, scenario_cfg: dict,
 # ---------------------------------------------------------------------------
 
 W_HIT      =  3.0
-W_DEATH    = -200.0
+W_DEATH    = -500.0
 W_SURVIVAL =  40.0
 W_ACCURACY =  2.0
 
@@ -455,7 +493,7 @@ class GeneticOptimizer:
 
     # ------------------------------------------------------------------
 
-    def _map_sizes(self) -> Tuple[Tuple[float, float], ...]:
+    def _map_sizes(self) -> Tuple[Tuple[int, int], ...]:
         seen = []
         for cfg in self.cfg.scenario_configs:
             ms = tuple(cfg["map_size"])
@@ -794,7 +832,7 @@ class GeneticOptimizer:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--pop",       type=int,   default=100)
-    p.add_argument("--gen",       type=int,   default=25)
+    p.add_argument("--gen",       type=int,   default=50)
     p.add_argument("--workers",   type=int,   default=-1, help="joblib n_jobs (-1 = all cores)")
     p.add_argument("--sigma",     type=float, default=0.10)
     p.add_argument("--pmut",      type=float, default=0.25)

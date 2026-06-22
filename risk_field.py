@@ -53,61 +53,62 @@ FRAG_RADIUS_RATIO     = 0.55   # fragment radius = parent * ratio
 ALPHA_AGGREGATION = 0.6        # weight on max(R_i) vs normalised sum
 
 # FIS membership function breakpoints — (tau in seconds, d in pixels)
-# Recalibrated: less conservative so FUZZY mode activates more often.
-# Key insight: Kessler asteroids at typical speeds cross ~200px in ~2s.
-# "Critical" should mean imminent (< 1s), not anything under 1.5s.
+# ---------------------------------------------------------------------------
+# IMPORTANT — these are PARTITIONS OF UNITY built from strictly increasing
+# knots, so that sum(mu) == 1 for every input (no dead zones, no overlaps>1).
+# They are overwritten at runtime by ga_optimizer.apply_genome_to_modules(),
+# which rebuilds them the SAME way from the trained knots. Keep the structure:
+#
+#   tau knots  tk0<tk1<tk2<tk3<tk4<tk5  ->  4 overlapping trapezoids
+#   d   knots  dk0<dk1<dk2<dk3          ->  3 overlapping trapezoids
+#
+# The sentinel a=b=-1.0 on the left-most (down-ramp only) set guarantees the
+# function returns 1.0 at x=0 instead of the spurious 0.0 the old (0,0,..)
+# form produced at the exact boundary (surface contact / imminent collision).
+# ---------------------------------------------------------------------------
 
-# Tau linguistic values
-TAU_CRITICAL = (0.0,  0.0,  0.25,  0.5)   # truly imminent: < 1s
-TAU_CLOSE    = (0.25,  0.5,  0.5,  1.5)   # approaching: 1-2.5s
-TAU_MEDIUM   = (0.6,  1.5,  1.5,  5.5)   # watch: 2.5-5.5s
-TAU_FAR      = (1.5,  5.5, 99.0, 99.0)   # safe: > 5s
+# Tau linguistic values (knots: 0.4 0.9 1.6 2.6 4.0 6.0)
+TAU_CRITICAL = (-1.0, -1.0,  0.4,  0.9)   # imminent
+TAU_CLOSE    = ( 0.4,  0.9,  1.6,  2.6)   # approaching
+TAU_MEDIUM   = ( 1.6,  2.6,  4.0,  6.0)   # watch
+TAU_FAR      = ( 4.0,  6.0, 99.0, 99.0)   # safe
 
-# Distance linguistic values (surface distance in pixels)
-# Tightened: "near" < 80px, "far" > 200px (not 320px)
-D_NEAR   = (0.0,   0.0,  50.0,  90.0)
-D_MEDIUM = (50.0,  90.0, 90.0, 220.0)
-D_FAR    = (90.0, 220.0, 9999., 9999.)
+# Distance linguistic values (surface distance in px; knots: 60 110 180 260)
+D_NEAR   = (-1.0,  -1.0,   60.0,  110.0)
+D_MEDIUM = ( 60.0, 110.0, 180.0,  260.0)
+D_FAR    = (180.0, 260.0, 9999.0, 9999.0)
 
 # Size linguistic values (radius in pixels)
 S_SMALL  = (0.0,  0.0,  0.0,  1.0)
 S_MEDIUM = (0.50, 1.0,  1.0,  2.0)
 S_LARGE  = (1.0, 2.0, 999.0, 999.0)
 
-# Output singletons for Sugeno-style defuzzification
-# Recalibrated: spread the outputs further apart so gradations matter
+# Output singletons for Sugeno-style defuzzification.
+# OUT_CRITICAL is the hard-wired consequent of the single "imminent" rule.
 OUT_CRITICAL   = 1.00
 OUT_HIGH       = 0.75
 OUT_MEDIUM     = 0.20
 OUT_LOW        = 0.15
 OUT_NEGLIGIBLE = 0.02
-FFS = 0.0
-FFM = 0.0
-FFL = 0.0
-FMS = 0.0
-FMM = 0.0
-FML = 0.0
-FNS = 0.0
-FNM = 0.0
-FNL = 0.0
-CMS = 0.0
-CMM = 0.0
-CML = 0.0
-CNS = 0.0
-CNM = 0.0
-CNL = 0.0
-CFS = 0.0
-CFM = 0.0
-CFL = 0.0
-MNS = 0.0
-MNM = 0.0
-MNL = 0.0
-MMS = 0.0
-MMM = 0.0
-MML = 0.0
-MFL = 0.0
-MFM = 0.0
-MFS = 0.0
+
+# Per-rule consequents on the (tau-class x dist-class x size) lattice.
+# Naming: <Tau><Dist><Size>  with Tau in {C=close, M=medium, F=far},
+# Dist in {N=near, M=medium, F=far}, Size in {S, M, L}.
+# Defaults are MONOTONE: risk decreases as tau gets less urgent (C>M>F),
+# as distance grows (N>M>F) and as size shrinks (L>M>S). The GA preserves
+# this monotonicity via Genome.repair(), so the learned surface stays
+# physically sensible (closer/bigger/sooner is never *less* dangerous).
+CNL = 0.85; CNM = 0.65; CNS = 0.45
+CML = 0.50; CMM = 0.35; CMS = 0.22
+CFL = 0.30; CFM = 0.18; CFS = 0.10
+
+MNL = 1.00; MNM = 0.85; MNS = 0.65
+MML = 0.80; MMM = 0.60; MMS = 0.40
+MFL = 0.45; MFM = 0.30; MFS = 0.18
+
+FNL = 0.35; FNM = 0.22; FNS = 0.12
+FML = 0.18; FMM = 0.10; FMS = 0.05
+FFL = 0.08; FFM = 0.04; FFS = 0.02
 
 
 
@@ -116,7 +117,7 @@ MFS = 0.0
 # ---------------------------------------------------------------------------
 
 def _trapezoid(x: float, a: float, b: float, c: float, d: float) -> float:
-    """
+    r"""
     Trapezoidal membership function.
 
         1         ___________

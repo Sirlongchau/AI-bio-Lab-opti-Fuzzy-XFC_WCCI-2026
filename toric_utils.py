@@ -172,12 +172,19 @@ def time_to_collision(
             ux = dx / dist
             uy = dy / dist
 
+            # closing = d(distance)/dt = r_hat · v_rel.
+            #   closing < 0  -> gap shrinking  -> APPROACHING (collision possible)
+            #   closing >= 0 -> gap growing    -> receding / parallel (skip)
+            # NB: the previous implementation kept closing>0 and divided by it,
+            # which inverted the sign — approaching asteroids reported tau≈inf
+            # (looked safe) while receding ones reported small tau (looked
+            # lethal). This matches the docstring: closing_speed = -(r_hat·v_rel).
             closing = ux * rvx + uy * rvy
 
-            if closing <= 0:
+            if closing >= 0:
                 continue
 
-            ttc = d_eff / closing
+            ttc = d_eff / (-closing)
 
             if ttc < best_ttc:
                 best_ttc = ttc
